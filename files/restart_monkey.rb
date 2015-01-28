@@ -73,13 +73,21 @@ def vanished_libraries(libs)
   end
 end
 
-def affected_exes(vanished_libs)
-  affected_pids = vanished_libs.values.flatten.uniq
+def affected_exes(vanished_libs, updated_pids)
+  affected_pids = (vanished_libs.values.flatten + updated_pids).uniq
   affected_pids.collect do |p|
     pid = p.to_i
-    `readlink /proc/#{pid}/exe`
+    `readlink /proc/#{pid}/exe`.gsub(" (deleted)", "")
   end.uniq.sort
 end
+
+def updated_pids(pids)
+  pids.select do |p|
+    pid = p.to_i
+    `readlink /proc/#{pid}/exe` =~ / \(deleted\)$/
+  end.uniq.sort
+end
+
 
 def guess_affected_services(affected_exes)
   ignored_names = /daemon|service|common|finish|dispatcher|system|\.sh|boot|setup|support/
@@ -109,7 +117,8 @@ end
 def find_affected_exes
   libs          = libraries(pids)
   vanished_libs = vanished_libraries(libs)
-  exes          = affected_exes(vanished_libs)
+  updated       = updated_pids(pids)
+  exes          = affected_exes(vanished_libs, updated)
 
   if DEBUG
     unless vanished_libs.empty?
