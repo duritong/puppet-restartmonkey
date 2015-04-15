@@ -1,8 +1,14 @@
 #!/usr/bin/env ruby
 
-DEBUG = false
+DEBUG = ARGV.include?('--debug')
 
 SYSTEMCTL = `which systemctl 2> /dev/null`
+
+DRY_RUN = ARGV.include?('--dry-run')
+
+if DRY_RUN
+  puts "--- Restartmonkey dry-run"
+end
 
 # copy from shellwords.rb
 def shellescape(str)
@@ -118,6 +124,7 @@ def find_affected_exes
   libs          = libraries(pids)
   vanished_libs = vanished_libraries(libs)
   updated       = updated_pids(pids)
+  updated = pids
   exes          = affected_exes(vanished_libs, updated)
 
   if DEBUG
@@ -147,10 +154,15 @@ def restart(names)
     next if blacklist.include? name
     next unless SERVICES.include? name
 
-    unless SYSTEMCTL.empty?
-      `systemctl restart #{name}`
+    cmd = unless SYSTEMCTL.empty?
+      "systemctl restart #{name}"
     else
-      `/etc/init.d/#{name} restart`
+      "/etc/init.d/#{name} restart"
+    end
+    if DRY_RUN
+      puts "Would exec: '#{cmd}'"
+    else
+      `#{cmd}`
     end
   end
 end
@@ -162,17 +174,19 @@ if affected.size > 0
 
   restart(to_restart)
 
-  still_affected = find_affected_exes
-
-  if still_affected[0].size > 0
-    puts "Unable to Resolve Proplems with the following prcesses:"
+  unless DRY_RUN
     still_affected = find_affected_exes
-    still_affected[0].each do |a|
-      puts "* #{a}"
-    end
-    puts "Affected libraries:"
-    still_affected[1].keys.each do |a|
-      puts "* #{a}"
+
+    if still_affected[0].size > 0
+      puts "Unable to Resolve Proplems with the following prcesses:"
+      still_affected = find_affected_exes
+      still_affected[0].each do |a|
+        puts "* #{a}"
+      end
+      puts "Affected libraries:"
+      still_affected[1].keys.each do |a|
+        puts "* #{a}"
+      end
     end
   end
 end
