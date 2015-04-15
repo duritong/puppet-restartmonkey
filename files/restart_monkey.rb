@@ -76,7 +76,7 @@ end
 def vanished_libraries(libs)
   Hash[libs.collect do |lib, pid|
     if File.exist?(lib) then nil else [lib, pid] end
-  end.flatten]
+  end.compact]
 end
 
 def affected_exes(vanished_libs, updated_pids)
@@ -147,7 +147,8 @@ end
 
 def restart(names)
   blacklist = ["halt", "reboot", "libvirt-guests", "cryptdisks",
-               "functions", "qemu-kvm", "rc"]
+               "functions", "qemu-kvm", "rc", "network", "networking",
+               "shorewall"]
 
   names.each do |name|
     next if blacklist.include? name
