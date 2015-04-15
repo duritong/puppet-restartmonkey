@@ -124,7 +124,6 @@ def find_affected_exes
   libs          = libraries(pids)
   vanished_libs = vanished_libraries(libs)
   updated       = updated_pids(pids)
-  updated = pids
   exes          = affected_exes(vanished_libs, updated)
 
   if DEBUG
