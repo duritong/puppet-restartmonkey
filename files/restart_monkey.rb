@@ -74,9 +74,9 @@ def libraries(pids)
 end
 
 def vanished_libraries(libs)
-  libs.select do |lib|
-    ! File.exist? lib
-  end
+  Hash[libs.collect do |lib, pid|
+    if File.exist?(lib) then nil else [lib, pid] end
+  end.flatten]
 end
 
 def affected_exes(vanished_libs, updated_pids)
