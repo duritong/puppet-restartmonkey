@@ -6,4 +6,11 @@ class restartmonkey {
     group   => 0,
     mode    => '0700';
   }
+
+  cron { 'puppet_run_restartmonkey':
+    command => '/usr/local/sbin/restart-monkey --dry-run --debug',
+    user    => 'root',
+    hour    => fqdn_rand(59),
+    minute  => fqdn_rand(24),
+  }
 }
