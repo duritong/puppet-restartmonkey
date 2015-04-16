@@ -6,10 +6,6 @@ SYSTEMCTL = `which systemctl 2> /dev/null`
 
 DRY_RUN = ARGV.include?('--dry-run')
 
-if DRY_RUN
-  puts "--- Restartmonkey dry-run"
-end
-
 # copy from shellwords.rb
 def shellescape(str)
   str = str.to_s
