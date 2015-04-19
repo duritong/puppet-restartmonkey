@@ -70,7 +70,7 @@ else
     shellescape(s)
   end
   def do_restart(service)
-    exec_cmd("/etc/init.d/#{name} restart")
+    exec_cmd("/etc/init.d/#{service} restart")
   end
   def check_service(service)
     exec_cmd("/etc/init.d/#{service} status",true)
