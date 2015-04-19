@@ -36,9 +36,10 @@ def longest_common_substr(strings)
   end
 end
 
-def cmd(c, force=!DRY_RUN)
+def exec_cmd(cmd, force=!DRY_RUN)
   if force
-    output = system("#{cmd} 2&>1")
+    puts "Run: #{cmd} 2&>1" if DEBUG
+    output = `#{cmd} 2&>1`
     res = $?
   else
     puts "Would run: #{cmd} 2&>1"
@@ -47,7 +48,6 @@ def cmd(c, force=!DRY_RUN)
   end
   if DEBUG
     puts "Output: #{output}"
-    puts
   end
   res.to_i == 0
 end
@@ -60,20 +60,20 @@ unless SYSTEMCTL.empty?
   end.compact
 
   def do_restart(service)
-    cmd("systemctl restart #{service}")
+    exec_cmd("systemctl restart #{service}")
   end
   def check_service(service)
-    cmd("systemctl status #{service}")
+    exec_cmd("systemctl status #{service}", true)
   end
 else
   SERVICES = `ls -l /etc/init.d/ | awk '{print $9}'`.split("\n").collect do |s|
     shellescape(s)
   end
   def do_restart(service)
-    system("/etc/init.d/#{name} restart")
+    exec_cmd("/etc/init.d/#{name} restart")
   end
   def check_service(service)
-    system("/etc/init.d/#{service} status",true)
+    exec_cmd("/etc/init.d/#{service} status",true)
   end
 end
 
@@ -138,7 +138,7 @@ def guess_affected_services(affected_exes)
   if DEBUG
     unless as_todo.empty?
       puts "Probably affected services:"
-      as.each do |service|
+      puts as_todo.each do |service|
         puts "* #{service}"
       end
     end
@@ -219,5 +219,4 @@ if affected.size > 0
     end
   end
 end
-
 
