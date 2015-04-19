@@ -12,5 +12,6 @@ class restartmonkey {
     user    => 'root',
     hour    => fqdn_rand(24),
     minute  => fqdn_rand(59),
+    require => File['/usr/local/sbin/restart-monkey'];
   }
 }
