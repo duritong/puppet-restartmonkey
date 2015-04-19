@@ -38,11 +38,11 @@ end
 
 def exec_cmd(cmd, force=!DRY_RUN)
   if force
-    puts "Run: #{cmd} 2&>1" if DEBUG
-    output = `#{cmd} 2&>1`
+    puts "Run: #{cmd}" if DEBUG
+    output = `#{cmd}`
     res = $?
   else
-    puts "Would run: #{cmd} 2&>1"
+    puts "Would run: #{cmd}"
     output = ''
     res = 0
   end
@@ -63,7 +63,7 @@ unless SYSTEMCTL.empty?
     exec_cmd("systemctl restart #{service}")
   end
   def check_service(service)
-    exec_cmd("systemctl status #{service}", true)
+    exec_cmd("systemctl is-active #{service}", true)
   end
 else
   SERVICES = `ls -l /etc/init.d/ | awk '{print $9}'`.split("\n").collect do |s|
