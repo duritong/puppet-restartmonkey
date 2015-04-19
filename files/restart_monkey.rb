@@ -138,7 +138,7 @@ def guess_affected_services(affected_exes)
   if DEBUG
     unless as_todo.empty?
       puts "Probably affected services:"
-      puts as_todo.each do |service|
+      as_todo.each do |service|
         puts "* #{service}"
       end
     end
