@@ -26,7 +26,7 @@ def shellescape(str)
 end
 
 def longest_common_substr(strings)
-  shortest = strings.min_by &:length
+  shortest = strings.min_by(&:length)
   maxlen = shortest.length
   maxlen.downto(0) do |len|
     0.upto(maxlen - len) do |start|
@@ -36,18 +36,46 @@ def longest_common_substr(strings)
   end
 end
 
-SERVICES =
-  unless SYSTEMCTL.empty?
-    ss = `systemctl list-units | awk '{print $1}' | head -n -2`
-    ss.split("\n").collect do |s|
-      s =~ /(.*).service$/
-      $1
-    end.compact
+def cmd(c, force=!DRY_RUN)
+  if force
+    output = system("#{cmd} 2&>1")
+    res = $?
   else
-    `ls -l /etc/init.d/ | awk '{print $9}'`.split("\n")
-  end.collect do |s|
+    puts "Would run: #{cmd} 2&>1"
+    output = ''
+    res = 0
+  end
+  if DEBUG
+    puts "Output: #{output}"
+    puts
+  end
+  res.to_i == 0
+end
+
+unless SYSTEMCTL.empty?
+  ss = `systemctl list-units | awk '{print $1}' | head -n -2`
+  SERVICES = ss.split("\n").collect do |s|
+    s =~ /(.*).service$/
+    shellescape($1)
+  end.compact
+
+  def do_restart(service)
+    cmd("systemctl restart #{service}")
+  end
+  def check_service(service)
+    cmd("systemctl status #{service}")
+  end
+else
+  SERVICES = `ls -l /etc/init.d/ | awk '{print $9}'`.split("\n").collect do |s|
     shellescape(s)
   end
+  def do_restart(service)
+    system("/etc/init.d/#{name} restart")
+  end
+  def check_service(service)
+    system("/etc/init.d/#{service} status",true)
+  end
+end
 
 def pids
   `cd /proc && ls [0-9]* -ld 2> /dev/null | awk '{print $9}'`.split("\n")
@@ -103,16 +131,26 @@ def guess_affected_services(affected_exes)
     end
   end.flatten.uniq.sort
 
+  as_todo = as.select{|s| check_service(s) }
+
+  skip_as = as - as_todo
+
   if DEBUG
-    unless as.empty?
-      puts "Probably affected Services:"
+    unless as_todo.empty?
+      puts "Probably affected services:"
       as.each do |service|
+        puts "* #{service}"
+      end
+    end
+    unless skip_as.empty?
+      puts "Skipping non-running services:"
+      skip_as.each do |service|
         puts "* #{service}"
       end
     end
   end
 
-  as
+  as_todo
 end
 
 
@@ -150,15 +188,10 @@ def restart(names)
     next if blacklist.include? name
     next unless SERVICES.include? name
 
-    cmd = unless SYSTEMCTL.empty?
-      "systemctl restart #{name}"
-    else
-      "/etc/init.d/#{name} restart"
-    end
     if DRY_RUN
-      puts "Would exec: '#{cmd}'"
+      puts "Would restart: '#{name}'"
     else
-      `#{cmd}`
+      do_restart(name)
     end
   end
 end
