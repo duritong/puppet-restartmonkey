@@ -8,7 +8,7 @@ class restartmonkey {
   }
 
   cron { 'puppet_run_restartmonkey':
-    command => '/usr/local/sbin/restart-monkey --dry-run --debug',
+    command => '/usr/local/sbin/restart-monkey --dry-run --verbose',
     user    => 'root',
     hour    => fqdn_rand(24),
     minute  => fqdn_rand(59),

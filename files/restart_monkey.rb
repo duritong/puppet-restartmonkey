@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 
 DEBUG = ARGV.include?('--debug')
+VERBOSE = ARGV.include?('--verbose')
 
 SYSTEMCTL = `which systemctl 2> /dev/null`
 
@@ -142,7 +143,7 @@ def guess_affected_services(affected_exes)
 
   skip_as = as - as_todo
 
-  if DEBUG
+  if VERBOSE
     unless as_todo.empty?
       puts "Probably affected services:"
       as_todo.each do |service|
@@ -167,7 +168,7 @@ def find_affected_exes
   updated       = updated_pids(pids)
   exes          = affected_exes(vanished_libs, updated)
 
-  if DEBUG
+  if VERBOSE
     unless vanished_libs.empty?
       puts "Updated Libraries:"
       vanished_libs.keys.sort.each do |lib|
