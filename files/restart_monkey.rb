@@ -180,7 +180,6 @@ end
 def find_affected_exes(msg)
   libs          = libraries(pids)
   vanished_libs = vanished_libraries(libs)
-  vanished_libs = libs
   updated       = updated_pids(pids)
   affected_pids = (vanished_libs.values.flatten + updated).uniq
   exes          = affected_exes(affected_pids)
@@ -214,7 +213,7 @@ if affected.size > 0
 
   restart(to_restart)
 
-  unless DRY_RUN && false
+  unless DRY_RUN
     find_affected_exes("The following problems persist and need attention")
   end
 end
