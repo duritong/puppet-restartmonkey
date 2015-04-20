@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 
 DEBUG = ARGV.include?('--debug')
-VERBOSE = ARGV.include?('--verbose')
+VERBOSE = ARGV.include?('--verbose') || DEBUG
 
 SYSTEMCTL = `which systemctl 2> /dev/null`
 
@@ -104,12 +104,11 @@ def vanished_libraries(libs)
   end.compact]
 end
 
-def affected_exes(vanished_libs, updated_pids)
-  affected_pids = (vanished_libs.values.flatten + updated_pids).uniq
-  affected_pids.collect do |p|
+def affected_exes(affected_pids)
+  Hash[affected_pids.collect do |p|
     pid = p.to_i
-    `readlink /proc/#{pid}/exe`.gsub(" (deleted)", "").chomp
-  end.uniq.sort
+    [pid, `readlink /proc/#{pid}/exe`.gsub(" (deleted)", "").chomp]
+  end.uniq.sort]
 end
 
 def updated_pids(pids)
@@ -161,30 +160,34 @@ def guess_affected_services(affected_exes)
   as_todo
 end
 
-
-def find_affected_exes
-  libs          = libraries(pids)
-  vanished_libs = vanished_libraries(libs)
-  updated       = updated_pids(pids)
-  exes          = affected_exes(vanished_libs, updated)
-
-  if VERBOSE
-    unless vanished_libs.empty?
-      puts "Updated Libraries:"
-      vanished_libs.keys.sort.each do |lib|
-        l = File.basename(lib)
-        puts "* #{l}"
-      end
-    end
-    unless exes.empty?
-      puts "Affected Exes:"
-      exes.each do |exe|
-        puts "* #{exe}"
-      end
+def print_affected(exes, libs, msg)
+  puts msg unless libs.empty? && exes.empty?
+  unless libs.empty?
+    puts "Updated Libraries:"
+    libs.keys.sort.each do |lib|
+      l = File.basename(lib)
+      puts "* #{l}"
     end
   end
+  unless exes.empty?
+    puts "Affected Exes:"
+    exes.each do |pid, exe|
+      puts "* #{exe} [#{pid}] (#{`cat /proc/#{pid}/cmdline | xargs -0 echo`.chomp})"
+    end
+  end
+end
 
-  [exes, vanished_libs]
+def find_affected_exes(msg)
+  libs          = libraries(pids)
+  vanished_libs = vanished_libraries(libs)
+  vanished_libs = libs
+  updated       = updated_pids(pids)
+  affected_pids = (vanished_libs.values.flatten + updated).uniq
+  exes          = affected_exes(affected_pids)
+
+  print_affected(exes, vanished_libs, msg) if VERBOSE
+
+  exes.values
 end
 
 def restart(names)
@@ -204,27 +207,15 @@ def restart(names)
   end
 end
 
-affected = find_affected_exes.shift
+affected = find_affected_exes("Found the following problems")
 
 if affected.size > 0
   to_restart = guess_affected_services(affected)
 
   restart(to_restart)
 
-  unless DRY_RUN
-    still_affected = find_affected_exes
-
-    if still_affected[0].size > 0
-      puts "Unable to Resolve Proplems with the following prcesses:"
-      still_affected = find_affected_exes
-      still_affected[0].each do |a|
-        puts "* #{a}"
-      end
-      puts "Affected libraries:"
-      still_affected[1].keys.each do |a|
-        puts "* #{a}"
-      end
-    end
+  unless DRY_RUN && false
+    find_affected_exes("The following problems persist and need attention")
   end
 end
 
