@@ -107,7 +107,7 @@ def affected_exes(vanished_libs, updated_pids)
   affected_pids = (vanished_libs.values.flatten + updated_pids).uniq
   affected_pids.collect do |p|
     pid = p.to_i
-    `readlink /proc/#{pid}/exe`.gsub(" (deleted)", "")
+    `readlink /proc/#{pid}/exe`.gsub(" (deleted)", "").chomp
   end.uniq.sort
 end
 
@@ -121,12 +121,19 @@ end
 
 def guess_affected_services(affected_exes)
   ignored_names = /daemon|service|common|finish|dispatcher|system|\.sh|boot|setup|support/
+  service_mapping = {
+    "mysqld" => "mariadb"
+  }
 
   as = affected_exes.collect do |exe|
     SERVICES.select do |service|
       s = service.gsub(ignored_names, "")
       e = File.basename(exe)
       c = longest_common_substr([e, s])
+      if service_mapping[e]
+        c2 = longest_common_substr([service_mapping[e], s])
+        c = [c,c2].max
+      end
       c.length > 3
     end
   end.flatten.uniq.sort
