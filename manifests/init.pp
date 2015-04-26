@@ -29,7 +29,7 @@ class restartmonkey(
       group   => 0,
       mode    => '0700';
     '/etc/restartmonkey.conf':
-      content => inline_template("<%= { :whitelist => @whitelist, :ignore => @ignore }.to_yaml %>"),
+      content => inline_template("<%= { 'whitelist' => @whitelist, 'ignore' => @ignore }.to_yaml %>"),
       owner   => root,
       group   => 0,
       mode    => '0600';
