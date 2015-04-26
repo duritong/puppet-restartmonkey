@@ -239,7 +239,9 @@ def guess_affected_services(affected_exes)
 end
 
 def print_affected(exes, libs)
-  puts "\nCurrently the following problems persist:"
+  unless (libs.empty? && exes.empty?)
+    puts "\nCurrently the following problems persist:"
+  end
   unless libs.empty?
     puts "Updated Libraries:"
     libs.keys.sort.each do |lib|
