@@ -14,11 +14,6 @@ class restartmonkey(
     default => ''
   }
 
-  $minute_str = fqdn_rand(59)
-  # generate an hour within the night
-  $rand_hour = fqdn_rand(10)
-  $hour_str = (31 - $rand_hour) % 24
-
   file{
     '/usr/local/sbin/restart-monkey':
       source  => 'puppet:///modules/restartmonkey/restart_monkey.rb',
@@ -29,8 +24,14 @@ class restartmonkey(
       require => File['/usr/local/sbin/restart-monkey'];
   }
   if $active {
+    $minute_str = fqdn_rand(59)
+    # generate an hour within the night
+    $rand_hour = fqdn_rand(10)
+    $hour_str = (31 - $rand_hour) % 24
+
     File['/etc/cron.d/run_restartmonkey']{
-      content => "${minute_str} ${hour_str} * * * root /usr/local/sbin/restart-monkey${dry_run_str}${verbose_str}\n",
+      content => "${minute_str} ${hour_str} * * * root \
+/usr/local/sbin/restart-monkey${dry_run_str}${verbose_str}\n",
       owner   => 'root',
       group   => 0,
       mode    => '0644',
