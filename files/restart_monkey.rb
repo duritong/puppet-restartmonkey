@@ -192,7 +192,7 @@ end
 def restart(names)
   blacklist = ["halt", "reboot", "libvirt-guests", "cryptdisks",
                "functions", "qemu-kvm", "rc", "network", "networking",
-               "shorewall"]
+               "shorewall", "ssh", "sshd", "openvpn"]
 
   names.each do |name|
     next if blacklist.include? name
