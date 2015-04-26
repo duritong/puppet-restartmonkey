@@ -3,6 +3,7 @@ class restartmonkey(
   $active  = true,
   $dry_run = false,
   $verbose = false,
+  $policy  = 'normal',
   $whitelist = [],
   $ignore    = [],
 ) {
@@ -14,6 +15,11 @@ class restartmonkey(
   $verbose_str = $verbose ? {
     true    => ' --verbose',
     default => ''
+  }
+  $wait_str = $policy ? {
+    'canary'   => ' --wait-count 0',
+    'delicate' => ' --wait-count 3',
+    default    => ' --wait-count 1',
   }
 
   file{
@@ -38,7 +44,7 @@ class restartmonkey(
 
     File['/etc/cron.d/run_restartmonkey']{
       content => "${minute_str} ${hour_str} * * * root \
-/usr/local/sbin/restart-monkey${dry_run_str}${verbose_str}\n",
+/usr/local/sbin/restart-monkey${dry_run_str}${verbose_str}${$wait_str}\n",
       owner   => 'root',
       group   => 0,
       mode    => '0644',
