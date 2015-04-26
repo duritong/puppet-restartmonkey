@@ -139,7 +139,9 @@ unless SYSTEMCTL.empty?
   end.compact
 
   def do_restart(service)
-    exec_cmd("systemctl restart #{service}")
+    unless exec_cmd("systemctl restart #{service}")
+      puts "Failed to restart '#{service}'"
+    end
   end
   def check_service(service)
     exec_cmd("systemctl is-active #{service}", true)
@@ -149,7 +151,9 @@ else
     shellescape(s)
   end
   def do_restart(service)
-    exec_cmd("/etc/init.d/#{service} restart")
+    unless exec_cmd("/etc/init.d/#{service} restart")
+      puts "Failed to restart '#{service}'"
+    end
   end
   def check_service(service)
     exec_cmd("/etc/init.d/#{service} status",true)
