@@ -3,6 +3,8 @@ class restartmonkey(
   $active  = true,
   $dry_run = false,
   $verbose = false,
+  $whitelist = [],
+  $ignore    = [],
 ) {
 
   $dry_run_str = $dry_run ? {
@@ -20,6 +22,11 @@ class restartmonkey(
       owner   => root,
       group   => 0,
       mode    => '0700';
+    '/etc/restartmonkey.conf':
+      content => inline_template("<%= { :whitelist => @whitelist, :ignore => @ignore }.to_yaml %>"),
+      owner   => root,
+      group   => 0,
+      mode    => '0600';
     '/etc/cron.d/run_restartmonkey':
       require => File['/usr/local/sbin/restart-monkey'];
   }

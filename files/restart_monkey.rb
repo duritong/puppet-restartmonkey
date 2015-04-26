@@ -1,11 +1,89 @@
 #!/usr/bin/env ruby
 
-DEBUG = ARGV.include?('--debug')
-VERBOSE = ARGV.include?('--verbose') || DEBUG
+require 'yaml'
+require 'optparse'
+require 'fileutils'
+
+OPTION = {}
+OptionParser.new do |opts|
+  opts.banner = "Usage: restartmonkey [options]"
+  opts.on("-v", "--verbose", "Run verbosely") do |v|
+    OPTION[:verbose] = v
+  end
+  opts.on("-d", "--dry-run", "Don't do anything for real") do |v|
+    OPTION[:dry_run] = v
+  end
+  opts.on("-w", "--wait-count [n]", Integer,
+          "Schedule service restart after n runs.") do |w|
+    OPTION[:wait_count] = w
+  end
+  opts.on("--debug", "Print debug information") do |v|
+    OPTION[:debug]   = v
+    OPTION[:verbose] = v
+  end
+end.parse!
 
 SYSTEMCTL = `which systemctl 2> /dev/null`
 
-DRY_RUN = ARGV.include?('--dry-run')
+if Process.uid != 0
+  if OPTION[:dry_run]
+    puts "Warning: not running as root. Not all processes shown"
+  else
+    raise 'Must run as root'
+  end
+end
+
+
+CONFIG_FILE = "/etc/restartmonkey.conf"
+SPOOL_PATH  = "/var/spool/restartmonkey"
+SPOOL_FILE  = File::join(SPOOL_PATH, "jobs")
+
+class Cnf
+  def initialize
+    @cnf = YAML::load_file(CONFIG_FILE) rescue {}
+  end
+
+  def whitelisted?(service)
+    (@cnf["whitelist"] || []).include? service
+  end
+
+  def ignored?(service)
+    (@cnf["ignore"] || []).include? service
+  end
+end
+CONFIG = Cnf.new
+
+class Jobs
+  def initialize
+    @jobs = (YAML::load_file(SPOOL_FILE) rescue {}) || {}
+    @new_jobs = {}
+  end
+
+  def write
+    FileUtils.mkdir_p(SPOOL_PATH)
+    FileUtils.chmod_R(0600, SPOOL_PATH)
+    File.open(SPOOL_FILE, 'w') {|f| f.write @new_jobs.to_yaml }
+  end
+
+  def schedule(name)
+    wait_count = Integer(@jobs[name] || OPTION[:wait_count] || 0)
+    if wait_count == 0
+      if OPTION[:dry_run]
+        puts "Would restart service '#{name}'"
+      else
+        do_restart(name)
+      end
+    else
+      if OPTION[:dry_run]
+        puts "Would schedule service '#{name}' to be restarted in #{wait_count} runs"
+      else
+        puts "Probably affected service '#{name}' is scheduled to be restarted in #{wait_count} runs"
+        @new_jobs[name] = wait_count - 1
+      end
+    end
+  end
+end
+JOBS = Jobs.new
 
 # copy from shellwords.rb
 def shellescape(str)
@@ -37,9 +115,9 @@ def longest_common_substr(strings)
   end
 end
 
-def exec_cmd(cmd, force=!DRY_RUN)
+def exec_cmd(cmd, force=!OPTION[:dry_run])
   if force
-    puts "Run: #{cmd}" if DEBUG
+    puts "Run: #{cmd}" if OPTION[:debug]
     output = `#{cmd}`
     res = $?
   else
@@ -47,7 +125,7 @@ def exec_cmd(cmd, force=!DRY_RUN)
     output = ''
     res = 0
   end
-  if DEBUG
+  if OPTION[:debug]
     puts "Output: #{output}"
   end
   res.to_i == 0
@@ -142,7 +220,7 @@ def guess_affected_services(affected_exes)
 
   skip_as = as - as_todo
 
-  if VERBOSE
+  if OPTION[:verbose]
     unless as_todo.empty?
       puts "Probably affected services:"
       as_todo.each do |service|
@@ -150,7 +228,7 @@ def guess_affected_services(affected_exes)
       end
     end
     unless skip_as.empty?
-      puts "Skipping non-running services:"
+      puts "Ignoring non-running services:"
       skip_as.each do |service|
         puts "* #{service}"
       end
@@ -160,8 +238,8 @@ def guess_affected_services(affected_exes)
   as_todo
 end
 
-def print_affected(exes, libs, msg)
-  puts msg unless libs.empty? && exes.empty?
+def print_affected(exes, libs)
+  puts "\nCurrently the following problems persist:"
   unless libs.empty?
     puts "Updated Libraries:"
     libs.keys.sort.each do |lib|
@@ -177,14 +255,14 @@ def print_affected(exes, libs, msg)
   end
 end
 
-def find_affected_exes(msg)
+def find_affected_exes(verbose = false)
   libs          = libraries(pids)
   vanished_libs = vanished_libraries(libs)
   updated       = updated_pids(pids)
   affected_pids = (vanished_libs.values.flatten + updated).uniq
   exes          = affected_exes(affected_pids)
 
-  print_affected(exes, vanished_libs, msg) if VERBOSE
+  print_affected(exes, vanished_libs) if verbose
 
   exes.values
 end
@@ -192,30 +270,33 @@ end
 def restart(names)
   blacklist = ["halt", "reboot", "libvirt-guests", "cryptdisks",
                "functions", "qemu-kvm", "rc", "network", "networking",
-               "shorewall", "ssh", "sshd", "openvpn", "killprocs", "mountall",
-               "sendsigs"]
+               "killprocs", "mountall", "sendsigs"]
 
   names.each do |name|
     next if blacklist.include? name
     next unless SERVICES.include? name
 
-    if DRY_RUN
-      puts "Would restart: '#{name}'"
+    if CONFIG.ignored? name
+      puts "Skipping ignored service '#{name}'" if OPTION[:debug]
+      next
+    end
+
+    if CONFIG.whitelisted? name
+      JOBS.schedule(name)
     else
-      do_restart(name)
+      puts "Skipping restart of probably affected service '#{name}' since it's not whitelisted"
     end
   end
 end
 
-affected = find_affected_exes("Found the following problems")
+affected = find_affected_exes
 
 if affected.size > 0
   to_restart = guess_affected_services(affected)
 
   restart(to_restart)
 
-  unless DRY_RUN
-    find_affected_exes("The following problems persist and need attention")
-  end
+  find_affected_exes(true)
 end
 
+JOBS.write unless OPTION[:dry_run]
