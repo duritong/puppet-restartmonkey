@@ -273,6 +273,8 @@ def restart(names)
                "killprocs", "mountall", "sendsigs"]
 
   names.each do |name|
+    name = name.split("@")[0]
+
     next if blacklist.include? name
     next unless SERVICES.include? name
 
