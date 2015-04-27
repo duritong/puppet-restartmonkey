@@ -72,6 +72,10 @@ class Jobs
         puts "Would restart service '#{name}'"
       else
         do_restart(name)
+        sleep(1)
+        unless check_service(name)
+          do_start(name)
+        end
       end
     else
       if OPTION[:dry_run]
@@ -143,6 +147,11 @@ unless SYSTEMCTL.empty?
       puts "Failed to restart '#{service}'"
     end
   end
+  def do_start(service)
+    unless exec_cmd("systemctl start #{service}")
+      puts "Failed to start '#{service}'"
+    end
+  end
   def check_service(service)
     exec_cmd("systemctl is-active #{service}", true)
   end
@@ -153,6 +162,11 @@ else
   def do_restart(service)
     unless exec_cmd("/etc/init.d/#{service} restart")
       puts "Failed to restart '#{service}'"
+    end
+  end
+  def do_start(service)
+    unless exec_cmd("/etc/init.d/#{service} start")
+      puts "Failed to start '#{service}'"
     end
   end
   def check_service(service)
