@@ -17,9 +17,10 @@ class restartmonkey(
     default => ''
   }
   $wait_str = $policy ? {
-    'canary'   => ' --wait-count 0',
-    'delicate' => ' --wait-count 3',
-    default    => ' --wait-count 1',
+    'canary'     => " --wait-count 0",
+    'non-canary' => " --wait-count #{fqdn_rand(2)+1}",
+    'delicate'   => " --wait-count #{fqdn_rand(4)+1}",
+    default      => " --wait-count #{fqdn_rand(2)}",
   }
 
   file{
