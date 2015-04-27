@@ -16,12 +16,15 @@ class restartmonkey(
     true    => ' --verbose',
     default => ''
   }
-  $wait_str = $policy ? {
-    'canary'     => " --wait-count 0",
-    'non-canary' => " --wait-count #{fqdn_rand(2)+1}",
-    'delicate'   => " --wait-count #{fqdn_rand(4)+1}",
-    default      => " --wait-count #{fqdn_rand(2)}",
+  $wc_nc = fqdn_rand(2) + 1
+  $wc_de = fqdn_rand(4) + 1
+  $wait_count = $policy ? {
+    'canary'     => 0,
+    'non-canary' => $wc_nc,
+    'delicate'   => $wc_de,
+    default      => fqdn_rand(2),
   }
+  $wait_str = " --wait-count ${wait_count}"
 
   file{
     '/usr/local/sbin/restart-monkey':
