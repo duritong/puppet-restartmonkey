@@ -13,6 +13,9 @@ OptionParser.new do |opts|
   opts.on("-d", "--dry-run", "Don't do anything for real") do |v|
     OPTION[:dry_run] = v
   end
+  opts.on("-c", "--cron", "Only report errors and warnings, overwritten by verbose or debug") do |c|
+    OPTION[:cron] = c
+  end
   opts.on("-w", "--wait-count [n]", Integer,
           "Schedule service restart after n runs.") do |w|
     OPTION[:wait_count] = w
@@ -25,14 +28,33 @@ end.parse!
 
 SYSTEMCTL = `which systemctl 2> /dev/null`
 
+class Log
+  class << self
+    def info(msg)
+      puts "INFO: #{msg}" if OPTION[:verbose]
+    end
+    def debug(msg)
+      puts "DEBUG: #{msg}" if OPTION[:debug]
+    end
+    def puts(msg)
+      puts msg if (!OPTION[:cron] || OPTION[:verbose] || OPTION[:debug])
+    end
+    def warn(msg)
+      puts "WARNING: #{msg}"
+    end
+    def error(msg)
+      STDERR.puts "ERROR: #{msg}"
+    end
+  end
+end
+
 if Process.uid != 0
   if OPTION[:dry_run]
-    puts "Warning: not running as root. Not all processes shown"
+    Log.warn("not running as root. Not all processes shown")
   else
     raise 'Must run as root'
   end
 end
-
 
 CONFIG_FILE = "/etc/restartmonkey.conf"
 SPOOL_PATH  = "/var/spool/restartmonkey"
@@ -69,7 +91,7 @@ class Jobs
     wait_count = Integer(@jobs[name] || OPTION[:wait_count] || 0)
     if wait_count == 0
       if OPTION[:dry_run]
-        puts "Would restart service '#{name}'"
+        Log.puts "Would restart service '#{name}'"
       else
         do_restart(name)
         sleep(1)
@@ -79,9 +101,9 @@ class Jobs
       end
     else
       if OPTION[:dry_run]
-        puts "Would schedule service '#{name}' to be restarted in #{wait_count} runs"
+        Log.puts "Would schedule service '#{name}' to be restarted in #{wait_count} runs"
       else
-        puts "Probably affected service '#{name}' is scheduled to be restarted in #{wait_count} runs"
+        Log.puts "Probably affected service '#{name}' is scheduled to be restarted in #{wait_count} runs"
         @new_jobs[name] = wait_count - 1
       end
     end
@@ -121,16 +143,16 @@ end
 
 def exec_cmd(cmd, force=!OPTION[:dry_run])
   if force
-    puts "Run: #{cmd}" if OPTION[:debug]
+    Log.debug "Run: #{cmd}"
     output = `#{cmd}`
     res = $?
   else
-    puts "Would run: #{cmd}"
+    Log.puts "Would run: #{cmd}"
     output = ''
     res = 0
   end
   if OPTION[:debug]
-    puts "Output: #{output}"
+    Log.debug "Output: #{output}"
   end
   res.to_i == 0
 end
@@ -144,7 +166,7 @@ unless SYSTEMCTL.empty?
 
   def do_restart(service)
     unless exec_cmd("systemctl restart #{service}")
-      puts "Failed to restart '#{service}'"
+      Log.error "Failed to restart '#{service}'"
     end
   end
   def do_start(service)
@@ -161,7 +183,7 @@ else
   end
   def do_restart(service)
     unless exec_cmd("/etc/init.d/#{service} restart")
-      puts "Failed to restart '#{service}'"
+      Log.error "Failed to restart '#{service}'"
     end
   end
   def do_start(service)
@@ -238,18 +260,16 @@ def guess_affected_services(affected_exes)
 
   skip_as = as - as_todo
 
-  if OPTION[:verbose]
-    unless as_todo.empty?
-      puts "Probably affected services:"
-      as_todo.each do |service|
-        puts "* #{service}"
-      end
+  unless as_todo.empty?
+    Log.info "Probably affected services:"
+    as_todo.each do |service|
+      Log.info "* #{service}"
     end
-    unless skip_as.empty?
-      puts "Ignoring non-running services:"
-      skip_as.each do |service|
-        puts "* #{service}"
-      end
+  end
+  unless skip_as.empty?
+    Log.info "Ignoring non-running services:"
+    skip_as.each do |service|
+      Log.info "* #{service}"
     end
   end
 
@@ -258,19 +278,19 @@ end
 
 def print_affected(exes, libs)
   unless (libs.empty? && exes.empty?)
-    puts "\nCurrently the following problems persist:"
+    Log.puts "\nCurrently the following problems persist:"
   end
   unless libs.empty?
-    puts "Updated Libraries:"
+    Log.puts "Updated Libraries:"
     libs.keys.sort.each do |lib|
       l = File.basename(lib)
-      puts "* #{l}"
+      Log.puts "* #{l}"
     end
   end
   unless exes.empty?
-    puts "Affected Exes:"
+    Log.puts "Affected Exes:"
     exes.each do |pid, exe|
-      puts "* #{exe} [#{pid}] (#{`cat /proc/#{pid}/cmdline | xargs -0 echo`.chomp})"
+      Log.puts "* #{exe} [#{pid}] (#{`cat /proc/#{pid}/cmdline | xargs -0 echo`.chomp})"
     end
   end
 end
@@ -299,14 +319,14 @@ def restart(names)
     next unless SERVICES.include? name
 
     if CONFIG.ignored? name
-      puts "Skipping ignored service '#{name}'" if OPTION[:debug]
+      Log.debug "Skipping ignored service '#{name}'"
       next
     end
 
     if CONFIG.whitelisted? name
       JOBS.schedule(name)
     else
-      puts "Skipping restart of probably affected service '#{name}' since it's not whitelisted"
+      Log.puts "Skipping restart of probably affected service '#{name}' since it's not whitelisted"
     end
   end
 end

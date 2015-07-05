@@ -48,7 +48,7 @@ class restartmonkey(
 
     File['/etc/cron.d/run_restartmonkey']{
       content => "${minute_str} ${hour_str} * * * root \
-/usr/local/sbin/restart-monkey${dry_run_str}${verbose_str}${$wait_str}\n",
+/usr/local/sbin/restart-monkey --cron${dry_run_str}${verbose_str}${wait_str}\n",
       owner   => 'root',
       group   => 0,
       mode    => '0644',
