@@ -31,16 +31,16 @@ SYSTEMCTL = `which systemctl 2> /dev/null`
 class Log
   class << self
     def info(msg)
-      puts "INFO: #{msg}" if OPTION[:verbose]
+      STDOUT.puts "INFO: #{msg}" if OPTION[:verbose]
     end
     def debug(msg)
-      puts "DEBUG: #{msg}" if OPTION[:debug]
+      STDOUT.puts "DEBUG: #{msg}" if OPTION[:debug]
     end
     def puts(msg)
-      puts msg if (!OPTION[:cron] || OPTION[:verbose] || OPTION[:debug])
+     STDOUT.puts msg if (!OPTION[:cron] || OPTION[:verbose] || OPTION[:debug])
     end
     def warn(msg)
-      puts "WARNING: #{msg}"
+      STDOUT.puts "WARNING: #{msg}"
     end
     def error(msg)
       STDERR.puts "ERROR: #{msg}"
