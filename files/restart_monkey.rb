@@ -197,7 +197,7 @@ else
 end
 
 def pids
-  `cd /proc && ls [0-9]* -ld 2> /dev/null | awk '{print $9}'`.split("\n")
+  @pids ||= Dir['/proc/[0-9]*'].collect{|d| File.basename(d) }
 end
 
 def libraries(pids)
