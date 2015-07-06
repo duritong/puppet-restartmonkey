@@ -171,7 +171,7 @@ unless SYSTEMCTL.empty?
   end
   def do_start(service)
     unless exec_cmd("systemctl start #{service}")
-      puts "Failed to start '#{service}'"
+      Log.error "Failed to start '#{service}'"
     end
   end
   def check_service(service)
@@ -188,7 +188,7 @@ else
   end
   def do_start(service)
     unless exec_cmd("/etc/init.d/#{service} start")
-      puts "Failed to start '#{service}'"
+      Log.error "Failed to start '#{service}'"
     end
   end
   def check_service(service)
@@ -240,7 +240,7 @@ end
 def guess_affected_services(affected_exes)
   ignored_names = /daemon|service|common|finish|dispatcher|system|\.sh|boot|setup|support/
   service_mapping = {
-    "mysqld" => "mariadb"
+    "mysqld" => "mariadb",
   }
 
   as = affected_exes.collect do |exe|
