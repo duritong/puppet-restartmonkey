@@ -474,7 +474,7 @@ end
 def print_affected(exes, libs)
   unless (libs.empty? && exes.empty?)
     Log.puts "\nCurrently the following problems persist:"
-    unless REBOOT_MANAGER.reboot_pending?
+    if REBOOT_MANAGER.reboot_pending?
       Log.puts "Reboot pending! (Services: #{REBOOT_MANAGER.reboot_services.join(', ')})"
     end
     unless libs.empty?
