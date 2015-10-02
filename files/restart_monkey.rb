@@ -354,6 +354,7 @@ class Jobs
 end
 
 class RebootManager
+  attr_reader :reboot_services
   def initialize
     @reboot_services = []
   end
@@ -367,9 +368,13 @@ class RebootManager
     end
   end
 
+  def reboot_pending?
+    !@reboot_services.empty?
+  end
+
   def flush
     unless OPTION[:dry_run]
-      File.open('/var/run/reboot-monkey','w'){|f| f << @reboot_servies.join("\n") }
+      File.open('/var/run/reboot-monkey','w'){|f| f << @reboot_services.join("\n") }
     end
   end
 end
@@ -469,18 +474,21 @@ end
 def print_affected(exes, libs)
   unless (libs.empty? && exes.empty?)
     Log.puts "\nCurrently the following problems persist:"
-  end
-  unless libs.empty?
-    Log.puts "Updated Libraries:"
-    libs.keys.sort.each do |lib|
-      l = File.basename(lib)
-      Log.puts "* #{l}"
+    unless REBOOT_MANAGER.reboot_pending?
+      Log.puts "Reboot pending! (Services: #{REBOOT_MANAGER.reboot_services.join(', ')})"
     end
-  end
-  unless exes.empty?
-    Log.puts "Affected Exes:"
-    exes.each do |pid, exe|
-      Log.puts "* #{exe} [#{pid}] (#{`cat /proc/#{pid}/cmdline | xargs -0 echo`.chomp})"
+    unless libs.empty?
+      Log.puts "Updated Libraries:"
+      libs.keys.sort.each do |lib|
+        l = File.basename(lib)
+        Log.puts "* #{l}"
+      end
+    end
+    unless exes.empty?
+      Log.puts "Affected Exes:"
+      exes.each do |pid, exe|
+        Log.puts "* #{exe} [#{pid}] (#{`cat /proc/#{pid}/cmdline | xargs -0 echo`.chomp})"
+      end
     end
   end
 end
