@@ -53,6 +53,9 @@ class Log
     def puts(msg)
      STDOUT.puts msg if (!OPTION[:cron] || OPTION[:verbose] || OPTION[:debug])
     end
+    def notice(msg)
+     STDOUT.puts msg
+    end
     def warn(msg)
       STDOUT.puts "WARNING: #{msg}"
     end
@@ -526,7 +529,11 @@ def restart(names)
     if CONFIG.whitelisted?(sanitized_name)
       JOBS.schedule(name)
     else
-      Log.puts "Skipping restart of probably affected service '#{name}' since it's not whitelisted (Lookup: #{sanitized_name})"
+      if JOBS.run_now?(name)
+        Log.notice "Skipping restart of probably affected service '#{name}' since it's not whitelisted (Lookup: #{sanitized_name})"
+      else
+        Log.puts "Skipping restart of probably affected service '#{name}' since it's not whitelisted (Lookup: #{sanitized_name})"
+      end
     end
   end
 end
