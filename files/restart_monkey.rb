@@ -80,7 +80,7 @@ end
 
 class SystemdServiceManager < ServiceManager
   def do_restart(service)
-    unless exec_cmd("systemctl reload-or-restart #{service}")
+    unless exec_cmd("systemctl restart #{service}")
       Log.error "Failed to restart '#{service}'"
     end
   end
