@@ -66,6 +66,12 @@ class ServiceManager
   def service_suffix
     ''
   end
+  def expand_services(services)
+    services.collect{|s|expand_service(s) }
+  end
+  def expand_service(service)
+    service
+  end
   private
   def find_services
     raise 'implement for the specific init system'
@@ -91,6 +97,13 @@ class SystemdServiceManager < ServiceManager
   end
   def service_suffix
     '.service'
+  end
+  def expand_service(service)
+    if service =~ /@$/
+      self.services.select{|s| s.start_with?(service) && check_service(s) }
+    else
+      super(service)
+    end
   end
   private
   def find_services
@@ -267,7 +280,7 @@ def is_interpreter?(exe)
 end
 
 def interpreter_regexp
-  'bin\/(perl|ruby|python)[\d\.]*'
+  'bin\/(bash|perl|ruby|python)[\d\.]*'
 end
 
 def affected_exes(affected_pids)
@@ -352,7 +365,7 @@ class ServiceGuesser
       File.basename(l,SRV_MANAGER.service_suffix) if SRV_MANAGER.get_service_paths.any?{|p| l.start_with?(p) }
     }.compact
     Log.debug("Posstible services for #{exe}: #{possible_services.join(', ')}")
-    guess_affected_service(exe,possible_services)
+    SRV_MANAGER.expand_services(guess_affected_service(exe,possible_services))
   end
   private
   def longest_common_substr(strings)
