@@ -222,10 +222,26 @@ def vanished_libraries(libs)
   end.compact]
 end
 
+def cmdline(pid)
+  `cat /proc/#{pid}/cmdline | xargs -0 echo`.chomp
+end
+
+def is_interpreter?(exe)
+  exe =~ /#{interpreter_regexp}(;.*)?$/
+end
+
+def interpreter_regexp
+  'bin\/(perl|ruby|python)[\d\.]*'
+end
+
 def affected_exes(affected_pids)
   Hash[affected_pids.collect do |p|
     pid = p.to_i
-    [pid, `readlink /proc/#{pid}/exe`.gsub(" (deleted)", "").chomp]
+    exe = `readlink /proc/#{pid}/exe`.gsub(" (deleted)", "").chomp
+    if is_interpreter?(exe)
+      exe = cmdline(pid).sub(/.*#{interpreter_regexp}[\-\w\s]*\//,'/').gsub(/\s.*$/,'')
+    end
+    [pid, exe]
   end.uniq.sort]
 end
 
