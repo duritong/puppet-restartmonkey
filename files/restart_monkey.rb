@@ -223,7 +223,7 @@ class ServiceGuesser
   protected
   def get_affected_service(affected_exe)
     s = get_services_by_package(affected_exe)
-    s.empty? ? guess_affected_service(affected_exe) : s
+    (s.nil? || s.empty?) ? guess_affected_service(affected_exe) : s
   end
   def get_service_by_package(exe)
     raise 'Implement in subclass!'
