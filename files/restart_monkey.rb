@@ -122,7 +122,7 @@ class SystemdServiceManager < ServiceManager
     exec_cmd("systemctl is-active #{service}", true)
   end
   def get_service_paths
-    ['/lib/systemd/system', '/usr/lib/systemd/system','/etc/rc.d/init.d','/etc/init.d']
+    ['/lib/systemd/system/', '/usr/lib/systemd/system/','/etc/rc.d/init.d/','/etc/init.d/']
   end
   def service_suffix
     '.service'
@@ -162,7 +162,7 @@ class InitVServiceManager < ServiceManager
   end
 
   def get_service_paths
-    ['/etc/rc.d/init.d', '/etc/init.d']
+    ['/etc/rc.d/init.d/', '/etc/init.d/']
   end
 
   private
