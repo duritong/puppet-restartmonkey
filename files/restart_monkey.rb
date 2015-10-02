@@ -26,8 +26,6 @@ OptionParser.new do |opts|
   end
 end.parse!
 
-SYSTEMCTL = `which systemctl 2> /dev/null`
-
 class Log
   class << self
     def info(msg)
@@ -46,6 +44,94 @@ class Log
       STDERR.puts "ERROR: #{msg}"
     end
   end
+end
+
+
+class ServiceManager
+  def services
+    @services ||= find_services
+  end
+  def do_restart(service)
+    raise 'implement for the specific init system'
+  end
+  def do_start(service)
+    raise 'implement for the specific init system'
+  end
+  def check_service(service)
+    raise 'implement for the specific init system'
+  end
+  def get_service_paths
+    raise 'implement for the specific init system'
+  end
+  def service_suffix
+    ''
+  end
+  private
+  def find_services
+    raise 'implement for the specific init system'
+  end
+end
+
+class SystemdServiceManager < ServiceManager
+  def do_restart(service)
+    unless exec_cmd("systemctl reload-or-restart #{service}")
+      Log.error "Failed to restart '#{service}'"
+    end
+  end
+  def do_start(service)
+    unless exec_cmd("systemctl start #{service}")
+      Log.error "Failed to start '#{service}'"
+    end
+  end
+  def check_service(service)
+    exec_cmd("systemctl is-active #{service}", true)
+  end
+  def get_service_paths
+    ['/usr/lib/systemd/system','/etc/rc.d/init.d','/etc/init.d']
+  end
+  def service_suffix
+    '.service'
+  end
+  private
+  def find_services
+    `systemctl list-units | grep ' running ' | awk '{print $1}'`.split("\n").collect do |s|
+      s =~ /(.*).service$/
+      shellescape($1)
+    end.compact
+  end
+end
+
+class InitVServiceManager < ServiceManager
+  def do_restart(service)
+    unless exec_cmd("/etc/init.d/#{service} restart")
+      Log.error "Failed to restart '#{service}'"
+    end
+  end
+  def do_start(service)
+    unless exec_cmd("/etc/init.d/#{service} start")
+      Log.error "Failed to start '#{service}'"
+    end
+  end
+  def check_service(service)
+    exec_cmd("/etc/init.d/#{service} status",true)
+  end
+
+  def get_service_paths
+    ['/etc/rc.d/init.d', '/etc/init.d']
+  end
+
+  private
+  def find_services
+    Dir['/etc/init.d/*'].collect do |s|
+      shellescape(s)
+    end
+  end
+end
+
+SRV_MANAGER = if File.exists?('/usr/bin/systemctl')
+  SystemdServiceManager.new
+else
+  InitVServiceManager.new
 end
 
 if Process.uid != 0
@@ -93,10 +179,10 @@ class Jobs
       if OPTION[:dry_run]
         Log.puts "Would restart service '#{name}'"
       else
-        do_restart(name)
+        SRV_MANAGER.do_restart(name)
         sleep(1)
-        unless check_service(name)
-          do_start(name)
+        unless SRV_MANAGER.check_service(name)
+          SRV_MANAGER.do_start(name)
         end
       end
     else
@@ -130,17 +216,6 @@ def shellescape(str)
   str.gsub(/\n/, "'\n'")
 end
 
-def longest_common_substr(strings)
-  shortest = strings.min_by(&:length)
-  maxlen = shortest.length
-  maxlen.downto(0) do |len|
-    0.upto(maxlen - len) do |start|
-      substr = shortest[start,len]
-      return substr if strings.all?{|str| str.include? substr }
-    end
-  end
-end
-
 def exec_cmd(cmd, force=!OPTION[:dry_run])
   if force
     Log.debug "Run: #{cmd}"
@@ -155,45 +230,6 @@ def exec_cmd(cmd, force=!OPTION[:dry_run])
     Log.debug "Output: #{output}"
   end
   res.to_i == 0
-end
-
-unless SYSTEMCTL.empty?
-  ss = `systemctl list-units | awk '{print $1}' | head -n -2`
-  SERVICES = ss.split("\n").collect do |s|
-    s =~ /(.*).service$/
-    shellescape($1)
-  end.compact
-
-  def do_restart(service)
-    unless exec_cmd("systemctl restart #{service}")
-      Log.error "Failed to restart '#{service}'"
-    end
-  end
-  def do_start(service)
-    unless exec_cmd("systemctl start #{service}")
-      Log.error "Failed to start '#{service}'"
-    end
-  end
-  def check_service(service)
-    exec_cmd("systemctl is-active #{service}", true)
-  end
-else
-  SERVICES = `ls -l /etc/init.d/ | awk '{print $9}'`.split("\n").collect do |s|
-    shellescape(s)
-  end
-  def do_restart(service)
-    unless exec_cmd("/etc/init.d/#{service} restart")
-      Log.error "Failed to restart '#{service}'"
-    end
-  end
-  def do_start(service)
-    unless exec_cmd("/etc/init.d/#{service} start")
-      Log.error "Failed to start '#{service}'"
-    end
-  end
-  def check_service(service)
-    exec_cmd("/etc/init.d/#{service} status",true)
-  end
 end
 
 def pids
@@ -252,15 +288,28 @@ def updated_pids(pids)
   end.uniq.sort
 end
 
+class ServiceGuesser
+  attr_reader :ignored_names, :service_mapping
 
-def guess_affected_services(affected_exes)
-  ignored_names = /daemon|service|common|finish|dispatcher|system|\.sh|boot|setup|support/
-  service_mapping = {
-    "mysqld" => "mariadb",
-  }
+  def initialize
+    @ignored_names = /daemon|service|common|finish|dispatcher|system|\.sh|boot|setup|support/
+    @service_mapping = {
+      "mysqld" => "mariadb",
+    }
+  end
 
-  as = affected_exes.collect do |exe|
-    SERVICES.select do |service|
+  def guess_affected_services(affected_exes)
+    filter_services(affected_exes.collect{|exe| get_affected_service(exe) }.flatten.uniq.sort)
+  end
+  protected
+  def get_affected_service(affected_exe)
+    get_service_by_package(affected_exe) || guess_affected_service(affected_exe)
+  end
+  def get_service_by_package(exe)
+    raise 'Implement in subclass!'
+  end
+  def guess_affected_service(exe,services=SRV_MANAGER.services)
+    services.select do |service|
       s = service.gsub(ignored_names, "")
       e = File.basename(exe)
       c = longest_common_substr([e, s])
@@ -270,26 +319,80 @@ def guess_affected_services(affected_exes)
       end
       c.length > 3
     end
-  end.flatten.uniq.sort
-
-  as_todo = as.select{|s| check_service(s) }
-
-  skip_as = as - as_todo
-
-  unless as_todo.empty?
-    Log.info "Probably affected services:"
-    as_todo.each do |service|
-      Log.info "* #{service}"
-    end
-  end
-  unless skip_as.empty?
-    Log.info "Ignoring non-running services:"
-    skip_as.each do |service|
-      Log.info "* #{service}"
-    end
   end
 
-  as_todo
+  def filter_services(as)
+    as_todo = as.select{|s| SRV_MANAGER.check_service(s) }
+
+    skip_as = as - as_todo
+
+    unless as_todo.empty?
+      Log.info "Probably affected services:"
+      as_todo.each do |service|
+        Log.info "* #{service}"
+      end
+    end
+    unless skip_as.empty?
+      Log.info "Ignoring non-running services:"
+      skip_as.each do |service|
+        Log.info "* #{service}"
+      end
+    end
+
+    as_todo
+  end
+
+  def get_service_by_package(exe)
+    package = get_package(exe)
+    if $?.to_i > 0
+      Log.debug("Could not file package for #{exe}")
+      return nil
+    end
+    possible_services = list_files_of_package(package).split("\n").collect{|l|
+      File.basename(l,SRV_MANAGER.service_suffix) if SRV_MANAGER.get_service_paths.any?{|p| l.start_with?(p) }
+    }.compact
+    Log.debug("Posstible services for #{exe}: #{possible_services.join(', ')}")
+    guess_affected_service(exe,possible_services)
+  end
+  private
+  def longest_common_substr(strings)
+    shortest = strings.min_by(&:length)
+    maxlen = shortest.length
+    maxlen.downto(0) do |len|
+      0.upto(maxlen - len) do |start|
+        substr = shortest[start,len]
+        return substr if strings.all?{|str| str.include? substr }
+      end
+    end
+  end
+end
+
+class RPMServiceGuesser < ServiceGuesser
+  protected
+  def get_package(exe)
+    `rpm -qf #{shellescape(exe)} 2>/dev/null`.chomp
+  end
+  def list_files_of_package(package)
+    `rpm -ql #{package}`
+  end
+end
+
+class DPKGServiceGuesser < ServiceGuesser
+  protected
+  def get_package(exe)
+    `dpkg -S #{shellescape(exe)} 2>/dev/null`.chomp.split(':').first
+  end
+  def list_files_of_package(package)
+    `dpkg -L #{package}`
+  end
+end
+
+if File.exists?('/etc/redhat-release')
+  SRV_GUESSER = RPMServiceGuesser.new
+elsif File.exists?('/etc/debian_version')
+  SRV_GUESSER = DPKGServiceGuesser.new
+else
+  raise 'Can\'t detect the right service guesser'
 end
 
 def print_affected(exes, libs)
@@ -319,7 +422,6 @@ def find_affected_exes(verbose = false)
   exes          = affected_exes(affected_pids)
 
   print_affected(exes, vanished_libs) if verbose
-
   exes.values
 end
 
@@ -329,10 +431,10 @@ def restart(names)
                "killprocs", "mountall", "sendsigs"]
 
   names.each do |name|
-    name = name.split("@")[0]
+    name = name.split("@").first
 
     next if blacklist.include? name
-    next unless SERVICES.include? name
+    next unless SRV_MANAGER.services.include? name
 
     if CONFIG.ignored? name
       Log.debug "Skipping ignored service '#{name}'"
@@ -350,7 +452,7 @@ end
 affected = find_affected_exes
 
 if affected.size > 0
-  to_restart = guess_affected_services(affected)
+  to_restart = SRV_GUESSER.guess_affected_services(affected)
 
   restart(to_restart)
 
