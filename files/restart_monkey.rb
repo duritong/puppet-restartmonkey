@@ -3,6 +3,7 @@
 require 'yaml'
 require 'optparse'
 require 'fileutils'
+require 'facter'
 
 OPTION = {}
 OptionParser.new do |opts|
@@ -67,10 +68,13 @@ class ServiceManager
     ''
   end
   def expand_services(services)
-    services.collect{|s|expand_service(s) }
+    services.collect{|s|expand_service(s) }.flatten
   end
   def expand_service(service)
     service
+  end
+  def sanitize_name(name)
+    name
   end
   private
   def find_services
@@ -93,7 +97,7 @@ class SystemdServiceManager < ServiceManager
     exec_cmd("systemctl is-active #{service}", true)
   end
   def get_service_paths
-    ['/usr/lib/systemd/system','/etc/rc.d/init.d','/etc/init.d']
+    ['/lib/systemd/system', '/usr/lib/systemd/system','/etc/rc.d/init.d','/etc/init.d']
   end
   def service_suffix
     '.service'
@@ -104,6 +108,9 @@ class SystemdServiceManager < ServiceManager
     else
       super(service)
     end
+  end
+  def sanitize_name(name)
+    name.split('@').first
   end
   private
   def find_services
@@ -162,6 +169,11 @@ SPOOL_FILE  = File::join(SPOOL_PATH, "jobs")
 class Cnf
   def initialize
     @cnf = YAML::load_file(CONFIG_FILE) rescue {}
+    default_ignore = {
+      'CentOS.7' => ['auditd'],
+      'Debian.7' => ['dbus'],
+    }
+    default_ignore.keys.each{|k| @cnf['ignore'][k] = (@cnf['ignore'][k]||[])|default_ignore[k] }
   end
 
   def whitelisted?(service)
@@ -169,7 +181,10 @@ class Cnf
   end
 
   def ignored?(service)
-    (@cnf["ignore"] || []).include? service
+    ["#{Facter.value('operatingsystem')}.#{Facter.value('operatingsystemmajrelease')}",
+      Facter.value('operatingsystem'),
+      'default'
+    ].any?{|l| (@cnf["ignore"][l]||[]).include?(service) }
   end
 end
 CONFIG = Cnf.new
@@ -444,20 +459,19 @@ def restart(names)
                "killprocs", "mountall", "sendsigs"]
 
   names.each do |name|
-    name = name.split("@").first
+    sanitized_name = SRV_MANAGER.sanitize_name(name)
 
-    next if blacklist.include? name
-    next unless SRV_MANAGER.services.include? name
+    next if blacklist.include?(sanitized_name)
 
-    if CONFIG.ignored? name
-      Log.debug "Skipping ignored service '#{name}'"
+    if CONFIG.ignored?(sanitized_name)
+      Log.debug "Skipping ignored service '#{name}' (Lookup: #{sanitized_name})"
       next
     end
 
-    if CONFIG.whitelisted? name
+    if CONFIG.whitelisted?(sanitized_name)
       JOBS.schedule(name)
     else
-      Log.puts "Skipping restart of probably affected service '#{name}' since it's not whitelisted"
+      Log.puts "Skipping restart of probably affected service '#{name}' since it's not whitelisted (Lookup: #{sanitized_name})"
     end
   end
 end
@@ -473,3 +487,4 @@ if affected.size > 0
 end
 
 JOBS.write unless OPTION[:dry_run]
+
