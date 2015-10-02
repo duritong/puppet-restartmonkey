@@ -27,6 +27,21 @@ OptionParser.new do |opts|
   end
 end.parse!
 
+if Process.uid != 0
+  if OPTION[:dry_run]
+    Log.warn("not running as root. Not all processes shown")
+  else
+    raise 'Must run as root'
+  end
+end
+
+CONFIG_FILE = "/etc/restartmonkey.conf"
+REBOOT_FILE = "/var/run"
+SPOOL_PATH  = "/var/spool/restartmonkey"
+SPOOL_FILE  = File::join(SPOOL_PATH, "jobs")
+
+##### classes
+
 class Log
   class << self
     def info(msg)
@@ -50,7 +65,7 @@ end
 
 class ServiceManager
   def services
-    @services ||= find_services
+    @services ||= find_services.sort
   end
   def do_restart(service)
     raise 'implement for the specific init system'
@@ -66,6 +81,13 @@ class ServiceManager
   end
   def service_suffix
     ''
+  end
+
+  def filter_non_running_and_blocked_services(svs)
+    svs.select{|s| non_running_or_blocked_service?(s) }
+  end
+  def non_running_or_blocked_service?(service)
+    !(CONFIG.blacklisted?(sanitize_name(service))||CONFIG.blacklisted?(service)) && check_service(service)
   end
   def expand_services(services)
     services.collect{|s|expand_service(s) }.flatten
@@ -104,7 +126,7 @@ class SystemdServiceManager < ServiceManager
   end
   def expand_service(service)
     if service =~ /@$/
-      self.services.select{|s| s.start_with?(service) && check_service(s) }
+      self.services.select{|s| !CONFIG.blacklist?(service) && s.start_with?(service) && check_service(s) }
     else
       super(service)
     end
@@ -143,37 +165,24 @@ class InitVServiceManager < ServiceManager
   private
   def find_services
     Dir['/etc/init.d/*'].collect do |s|
-      shellescape(s)
+      shellescape(File.basename(s))
     end
   end
 end
 
-SRV_MANAGER = if File.exists?('/usr/bin/systemctl')
-  SystemdServiceManager.new
-else
-  InitVServiceManager.new
-end
-
-if Process.uid != 0
-  if OPTION[:dry_run]
-    Log.warn("not running as root. Not all processes shown")
-  else
-    raise 'Must run as root'
-  end
-end
-
-CONFIG_FILE = "/etc/restartmonkey.conf"
-SPOOL_PATH  = "/var/spool/restartmonkey"
-SPOOL_FILE  = File::join(SPOOL_PATH, "jobs")
-
 class Cnf
   def initialize
     @cnf = YAML::load_file(CONFIG_FILE) rescue {}
-    default_ignore = {
+    @cnf['must_reboot'] ||= {}
+    default_must_reboot = {
       'CentOS.7' => ['auditd'],
-      'Debian.7' => ['dbus'],
+      'Debian.7' => ['dbus','screen-cleanup'],
     }
-    default_ignore.keys.each{|k| @cnf['ignore'][k] = (@cnf['ignore'][k]||[])|default_ignore[k] }
+    default_must_reboot.keys.each{|k| @cnf['must_reboot'][k] = (@cnf['must_reboot'][k]||[])|default_must_reboot[k] }
+    @cnf['blacklisted'] = (@cnf['blacklisted']||[])|["halt", "reboot", "libvirt-guests", "cryptdisks",
+      "functions", "qemu-kvm", "rc", "netconsole",
+      "network", "networking","killprocs", "mountall",
+      "sendsigs",'xendomains']
   end
 
   def whitelisted?(service)
@@ -181,18 +190,130 @@ class Cnf
   end
 
   def ignored?(service)
+    (@cnf["ignore"] || []).include? service
+  end
+  def blacklisted?(service)
+    t = (@cnf["blacklisted"] || []).include? service
+    Log.debug("Service #{service} is blacklisted") if t
+    t
+  end
+  def must_reboot?(service)
     ["#{Facter.value('operatingsystem')}.#{Facter.value('operatingsystemmajrelease')}",
       Facter.value('operatingsystem'),
       'default'
-    ].any?{|l| (@cnf["ignore"][l]||[]).include?(service) }
+    ].any?{|l| (@cnf['must_reboot'][l]||[]).include?(service) }
   end
 end
-CONFIG = Cnf.new
+
+class ServiceGuesser
+  attr_reader :ignored_names, :service_mapping
+
+  def initialize
+    @ignored_names = /daemon|service|common|finish|dispatcher|system|\.sh|boot|setup|support/
+    @service_mapping = {
+      "mysqld" => "mariadb",
+    }
+  end
+
+  def guess_affected_services(affected_exes)
+    guessed_services = affected_exes.collect{|exe| get_affected_service(exe) }.flatten.uniq.sort
+    filter_services(guessed_services)
+  end
+
+  protected
+  def get_affected_service(affected_exe)
+    s = get_services_by_package(affected_exe)
+    s.empty? ? guess_affected_service(affected_exe) : s
+  end
+  def get_service_by_package(exe)
+    raise 'Implement in subclass!'
+  end
+  def guess_affected_service(exe,services=SRV_MANAGER.services)
+    services.select do |service|
+      s = service.gsub(ignored_names, "")
+      e = File.basename(exe)
+      c = longest_common_substr([e, s])
+      if service_mapping[e]
+        c2 = longest_common_substr([service_mapping[e], s])
+        c = [c,c2].max
+      end
+      c.length > 3
+    end
+  end
+
+  def filter_services(as)
+    as_todo = as.select{|s| !CONFIG.blacklisted?(SRV_MANAGER.sanitize_name(s) ) }
+    bs_as = as - as_todo
+    as = as_todo
+
+    as_todo = SRV_MANAGER.filter_non_running_and_blocked_services(as)
+    skip_as = as - as_todo
+
+    {
+      "Probably affected"    => as_todo,
+      "Ignoring blacklisted" => bs_as,
+      "Ignoring non-running" => skip_as,
+    }.each do |s,l|
+      unless l.empty?
+        Log.info "#{s} services:"
+        l.each{|s| Log.info "* #{s}" }
+      end
+    end
+    as_todo
+  end
+
+  def get_services_by_package(exe)
+    package = get_package(exe)
+    if $?.to_i > 0
+      Log.debug("Could not file package for #{exe}")
+      return nil
+    end
+    possible_services = list_files_of_package(package).split("\n").collect{|l|
+      File.basename(l,SRV_MANAGER.service_suffix) if SRV_MANAGER.get_service_paths.any?{|p| l.start_with?(p) }
+    }.compact
+    Log.debug("Possible services for #{exe}: #{possible_services.join(', ')}")
+    active_services = SRV_MANAGER.filter_non_running_and_blocked_services(possible_services)
+    Log.debug("Active services for #{exe}: #{active_services.join(', ')}")
+    SRV_MANAGER.expand_services(active_services)
+  end
+  private
+  def longest_common_substr(strings)
+    shortest = strings.min_by(&:length)
+    maxlen = shortest.length
+    maxlen.downto(0) do |len|
+      0.upto(maxlen - len) do |start|
+        substr = shortest[start,len]
+        return substr if strings.all?{|str| str.include? substr }
+      end
+    end
+  end
+end
+
+class RPMServiceGuesser < ServiceGuesser
+  protected
+  def get_package(exe)
+    `rpm -qf #{shellescape(exe)} 2>/dev/null`.chomp
+  end
+  def list_files_of_package(package)
+    `rpm -ql #{package}`
+  end
+end
+
+class DPKGServiceGuesser < ServiceGuesser
+  protected
+  def get_package(exe)
+    `dpkg -S #{shellescape(exe)} 2>/dev/null`.chomp.split(':').first
+  end
+  def list_files_of_package(package)
+    `dpkg -L #{package}`
+  end
+end
 
 class Jobs
   def initialize
     @jobs = (YAML::load_file(SPOOL_FILE) rescue {}) || {}
     @new_jobs = {}
+    @wait_count = {}
   end
 
   def write
@@ -202,8 +323,7 @@ class Jobs
   end
 
   def schedule(name)
-    wait_count = Integer(@jobs[name] || OPTION[:wait_count] || 0)
-    if wait_count == 0
+    if run_now?(name)
       if OPTION[:dry_run]
         Log.puts "Would restart service '#{name}'"
       else
@@ -215,15 +335,45 @@ class Jobs
       end
     else
       if OPTION[:dry_run]
-        Log.puts "Would schedule service '#{name}' to be restarted in #{wait_count} runs"
+        Log.puts "Would schedule service '#{name}' to be restarted in #{wait_count(name)} runs"
       else
-        Log.puts "Probably affected service '#{name}' is scheduled to be restarted in #{wait_count} runs"
-        @new_jobs[name] = wait_count - 1
+        Log.puts "Probably affected service '#{name}' is scheduled to be restarted in #{wait_count(name)} runs"
+        dec_wait_count(name)
       end
     end
   end
+  def run_now?(name)
+    wait_count(name) == 0
+  end
+  def wait_count(name)
+    @wait_count[name] ||= Integer(@jobs[name] || OPTION[:wait_count] || 0)
+  end
+  def dec_wait_count(name)
+    @new_jobs[name] = wait_count(name) - 1
+  end
 end
-JOBS = Jobs.new
+
+class RebootManager
+  def initialize
+    @reboot_services = []
+  end
+
+  def register_reboot(name)
+    if OPTION[:dry_run]
+      Log.info "Would register reboot for '#{name}'"
+    else
+      Log.info "Register '#{name}' for reboot"
+      @reboot_services << name
+    end
+  end
+
+  def flush
+    unless OPTION[:dry_run]
+      File.open('/var/run/reboot-monkey','w'){|f| f << @reboot_servies.join("\n") }
+    end
+  end
+end
+
 
 # copy from shellwords.rb
 def shellescape(str)
@@ -295,7 +445,7 @@ def is_interpreter?(exe)
 end
 
 def interpreter_regexp
-  'bin\/(bash|perl|ruby|python)[\d\.]*'
+  'bin\/(bash|perl|ruby|python)([\d\.]*|\.#prelink#)'
 end
 
 def affected_exes(affected_pids)
@@ -314,113 +464,6 @@ def updated_pids(pids)
     pid = p.to_i
     `readlink /proc/#{pid}/exe` =~ / \(deleted\)$/
   end.uniq.sort
-end
-
-class ServiceGuesser
-  attr_reader :ignored_names, :service_mapping
-
-  def initialize
-    @ignored_names = /daemon|service|common|finish|dispatcher|system|\.sh|boot|setup|support/
-    @service_mapping = {
-      "mysqld" => "mariadb",
-    }
-  end
-
-  def guess_affected_services(affected_exes)
-    filter_services(affected_exes.collect{|exe| get_affected_service(exe) }.flatten.uniq.sort)
-  end
-  protected
-  def get_affected_service(affected_exe)
-    get_service_by_package(affected_exe) || guess_affected_service(affected_exe)
-  end
-  def get_service_by_package(exe)
-    raise 'Implement in subclass!'
-  end
-  def guess_affected_service(exe,services=SRV_MANAGER.services)
-    services.select do |service|
-      s = service.gsub(ignored_names, "")
-      e = File.basename(exe)
-      c = longest_common_substr([e, s])
-      if service_mapping[e]
-        c2 = longest_common_substr([service_mapping[e], s])
-        c = [c,c2].max
-      end
-      c.length > 3
-    end
-  end
-
-  def filter_services(as)
-    as_todo = as.select{|s| SRV_MANAGER.check_service(s) }
-
-    skip_as = as - as_todo
-
-    unless as_todo.empty?
-      Log.info "Probably affected services:"
-      as_todo.each do |service|
-        Log.info "* #{service}"
-      end
-    end
-    unless skip_as.empty?
-      Log.info "Ignoring non-running services:"
-      skip_as.each do |service|
-        Log.info "* #{service}"
-      end
-    end
-
-    as_todo
-  end
-
-  def get_service_by_package(exe)
-    package = get_package(exe)
-    if $?.to_i > 0
-      Log.debug("Could not file package for #{exe}")
-      return nil
-    end
-    possible_services = list_files_of_package(package).split("\n").collect{|l|
-      File.basename(l,SRV_MANAGER.service_suffix) if SRV_MANAGER.get_service_paths.any?{|p| l.start_with?(p) }
-    }.compact
-    Log.debug("Posstible services for #{exe}: #{possible_services.join(', ')}")
-    SRV_MANAGER.expand_services(guess_affected_service(exe,possible_services))
-  end
-  private
-  def longest_common_substr(strings)
-    shortest = strings.min_by(&:length)
-    maxlen = shortest.length
-    maxlen.downto(0) do |len|
-      0.upto(maxlen - len) do |start|
-        substr = shortest[start,len]
-        return substr if strings.all?{|str| str.include? substr }
-      end
-    end
-  end
-end
-
-class RPMServiceGuesser < ServiceGuesser
-  protected
-  def get_package(exe)
-    `rpm -qf #{shellescape(exe)} 2>/dev/null`.chomp
-  end
-  def list_files_of_package(package)
-    `rpm -ql #{package}`
-  end
-end
-
-class DPKGServiceGuesser < ServiceGuesser
-  protected
-  def get_package(exe)
-    `dpkg -S #{shellescape(exe)} 2>/dev/null`.chomp.split(':').first
-  end
-  def list_files_of_package(package)
-    `dpkg -L #{package}`
-  end
-end
-
-if File.exists?('/etc/redhat-release')
-  SRV_GUESSER = RPMServiceGuesser.new
-elsif File.exists?('/etc/debian_version')
-  SRV_GUESSER = DPKGServiceGuesser.new
-else
-  raise 'Can\'t detect the right service guesser'
 end
 
 def print_affected(exes, libs)
@@ -454,17 +497,21 @@ def find_affected_exes(verbose = false)
 end
 
 def restart(names)
-  blacklist = ["halt", "reboot", "libvirt-guests", "cryptdisks",
-               "functions", "qemu-kvm", "rc", "network", "networking",
-               "killprocs", "mountall", "sendsigs"]
-
   names.each do |name|
     sanitized_name = SRV_MANAGER.sanitize_name(name)
 
-    next if blacklist.include?(sanitized_name)
+    if CONFIG.blacklisted?(sanitized_name)
+      Log.debug "Skipping blacklisted service '#{name}'(Lookup: #{sanitized_name})"
+      next
+    end
 
     if CONFIG.ignored?(sanitized_name)
       Log.debug "Skipping ignored service '#{name}' (Lookup: #{sanitized_name})"
+      next
+    end
+
+    if CONFIG.must_reboot?(sanitized_name)
+      REBOOT_MANAGER.register_reboot(name)
       next
     end
 
@@ -474,6 +521,25 @@ def restart(names)
       Log.puts "Skipping restart of probably affected service '#{name}' since it's not whitelisted (Lookup: #{sanitized_name})"
     end
   end
+end
+
+### Runtime configuration
+
+CONFIG = Cnf.new
+JOBS = Jobs.new
+REBOOT_MANAGER = RebootManager.new
+SRV_MANAGER = if File.exists?('/usr/bin/systemctl')
+  SystemdServiceManager.new
+else
+  InitVServiceManager.new
+end
+
+if File.exists?('/etc/redhat-release')
+  SRV_GUESSER = RPMServiceGuesser.new
+elsif File.exists?('/etc/debian_version')
+  SRV_GUESSER = DPKGServiceGuesser.new
+else
+  raise 'Can\'t detect the right service guesser'
 end
 
 affected = find_affected_exes
@@ -486,5 +552,10 @@ if affected.size > 0
   find_affected_exes(true)
 end
 
-JOBS.write unless OPTION[:dry_run]
+# save data
+
+unless OPTION[:dry_run]
+  JOBS.write
+  REBOOT_MANAGER.flush
+end
 
