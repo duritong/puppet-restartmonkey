@@ -1,4 +1,32 @@
 #!/usr/bin/env ruby
+#
+# This scripts helps you detect services that should
+# be restarted due to updated libraries. It can also
+# mark services that require a reboot
+#
+# It follows the following algorithm:
+#
+# 1. find running exes with loaded outdated libraries
+# 2. try to match these binaries to services
+#   a) munge any interpreter away
+#   b) do we have a direct mapping
+#   c) try to detect the service from the package
+#   d) try to guess the service by looking at the
+#      available services with a certain heurestic
+#   e) on these services, select only services that are:
+#     * not explicitely blaklisted
+#     * a must reboot service
+#     * running & explicitely whitelisted
+#
+# IF not in dry-run mode:
+# 3. try to restart the selected services, but only
+#    if the service should be scheduled to restart.
+#    Restarting means:
+#   a) note down services if they require reboot
+#   b) restart the service
+#
+# 4. redetect running exes with loaded outdated libraries
+#
 
 require 'yaml'
 require 'optparse'
@@ -87,10 +115,26 @@ class ServiceManager
   end
 
   def filter_non_running_and_blocked_services(svs)
-    svs.select{|s| non_running_or_blocked_service?(s) }
+    svs.reject{|s| non_running_or_blocked_service?(s) }
   end
+
+  def must_reboot_services(svs)
+    svs.select{|s| must_reboot_service?(s) }
+  end
+  def blacklisted_services(svs)
+    svs.select{|s| blacklisted_service?(s) }
+  end
+
+  def blacklisted_service?(service)
+    CONFIG.blacklisted?(sanitize_name(service))||CONFIG.blacklisted?(service)
+  end
+  def must_reboot_service?(service)
+    CONFIG.must_reboot?(sanitize_name(service))||CONFIG.must_reboot?(service)
+  end
+
+
   def non_running_or_blocked_service?(service)
-    !(CONFIG.blacklisted?(sanitize_name(service))||CONFIG.blacklisted?(service)) && check_service(service)
+    blacklisted_service?(service) || must_reboot_service?(service) || !check_service(service)
   end
   def expand_services(services)
     services.collect{|s|expand_service(s) }.flatten
@@ -176,9 +220,18 @@ end
 class Cnf
   def initialize
     @cnf = YAML::load_file(CONFIG_FILE) rescue {}
+    @cnf['bin_to_service'] ||= {}
+    default_bin_to_service = {
+      'CentOS.6' => {
+        '/sbin/mingetty' => 'getty-reboot',
+        '/sbin/agetty' => 'getty-reboot',
+      },
+    }
+    default_bin_to_service.keys.each{|k| @cnf['bin_to_service'][k] = default_bin_to_service[k].merge(@cnf['bin_to_service'][k]||{}) }
     @cnf['must_reboot'] ||= {}
     default_must_reboot = {
       'CentOS.7' => ['auditd'],
+      'CentOS.6' => ['udev-post','getty-reboot'],
       'Debian.7' => ['dbus','screen-cleanup'],
     }
     default_must_reboot.keys.each{|k| @cnf['must_reboot'][k] = (@cnf['must_reboot'][k]||[])|default_must_reboot[k] }
@@ -199,6 +252,17 @@ class Cnf
     t = (@cnf["blacklisted"] || []).include? service
     Log.debug("Service #{service} is blacklisted") if t
     t
+  end
+  def bin_to_service(binary)
+    ["#{Facter.value('operatingsystem')}.#{Facter.value('operatingsystemmajrelease')}",
+      Facter.value('operatingsystem'),
+      'default'
+    ].each do |f|
+      if svc = (@cnf['bin_to_service'][f]||{})[binary]
+        return svc
+      end
+    end
+    nil
   end
   def must_reboot?(service)
     ["#{Facter.value('operatingsystem')}.#{Facter.value('operatingsystemmajrelease')}",
@@ -225,7 +289,7 @@ class ServiceGuesser
 
   protected
   def get_affected_service(affected_exe)
-    s = get_services_by_package(affected_exe)
+    s = CONFIG.bin_to_service(affected_exe) || get_services_by_package(affected_exe)
     (s.nil? || s.empty?) ? guess_affected_service(affected_exe) : s
   end
   def get_service_by_package(exe)
@@ -245,14 +309,17 @@ class ServiceGuesser
   end
 
   def filter_services(as)
-    as_todo = as.select{|s| !CONFIG.blacklisted?(SRV_MANAGER.sanitize_name(s) ) }
-    bs_as = as - as_todo
-    as = as_todo
+    bs_as = SRV_MANAGER.blacklisted_services(as)
+    as = as - bs_as
+
+    as_reboot = SRV_MANAGER.must_reboot_services(as)
+    as = as - as_reboot
 
     as_todo = SRV_MANAGER.filter_non_running_and_blocked_services(as)
     skip_as = as - as_todo
 
     {
+      "Requiring reboot"    => as_reboot,
       "Probably affected"    => as_todo,
       "Ignoring blacklisted" => bs_as,
       "Ignoring non-running" => skip_as,
@@ -262,7 +329,9 @@ class ServiceGuesser
         l.each{|s| Log.info "* #{s}" }
       end
     end
-    as_todo
+    # services we want todo & services that require
+    # a reboot should be returned
+    as_todo|as_reboot
   end
 
   def get_services_by_package(exe)
@@ -275,7 +344,7 @@ class ServiceGuesser
       File.basename(l,SRV_MANAGER.service_suffix) if SRV_MANAGER.get_service_paths.any?{|p| l.start_with?(p) }
     }.compact
     Log.debug("Possible services for #{exe}: #{possible_services.join(', ')}")
-    active_services = SRV_MANAGER.filter_non_running_and_blocked_services(possible_services)
+    active_services = SRV_MANAGER.must_reboot_services(possible_services)|SRV_MANAGER.filter_non_running_and_blocked_services(possible_services)
     Log.debug("Active services for #{exe}: #{active_services.join(', ')}")
     SRV_MANAGER.expand_services(active_services)
   end
@@ -364,9 +433,9 @@ class RebootManager
 
   def register_reboot(name)
     if OPTION[:dry_run]
-      Log.info "Would register reboot for '#{name}'"
+      Log.debug "Would register reboot for '#{name}'"
     else
-      Log.info "Register '#{name}' for reboot"
+      Log.debug "Register '#{name}' for reboot"
       @reboot_services << name
     end
   end
@@ -556,6 +625,8 @@ elsif File.exists?('/etc/debian_version')
 else
   raise 'Can\'t detect the right service guesser'
 end
+
+## run
 
 affected = find_affected_exes
 

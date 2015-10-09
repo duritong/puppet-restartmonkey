@@ -39,6 +39,8 @@ class restartmonkey(
       mode    => '0600';
     '/etc/cron.d/run_restartmonkey':
       require => File['/usr/local/sbin/restart-monkey'];
+    '/etc/cron.monthly/restartmonkey_info':
+      require => File['/usr/local/sbin/restart-monkey'];
   }
   if $active {
     $minute_str = fqdn_rand(59)
@@ -46,6 +48,13 @@ class restartmonkey(
     $rand_hour = fqdn_rand(10)
     $hour_str = (31 - $rand_hour) % 24
 
+    # run it one a month in verbose to inform about remaining problems
+    File['/etc/cron.monthly/restartmonkey_info']{
+      content => '/usr/local/sbin/restart-monkey --cron --dry-run --verbose',
+      owner   => 'root',
+      group   => 0,
+      mode    => '0744',
+    }
     File['/etc/cron.d/run_restartmonkey']{
       content => "${minute_str} ${hour_str} * * * root \
 /usr/local/sbin/restart-monkey --cron${dry_run_str}${verbose_str}${wait_str}\n",
@@ -54,7 +63,8 @@ class restartmonkey(
       mode    => '0644',
     }
   } else {
-    File['/etc/cron.d/run_restartmonkey']{
+    File['/etc/cron.d/run_restartmonkey',
+      '/etc/cron.monthly/restartmonkey_info']{
       ensure => 'absent',
     }
   }
