@@ -153,17 +153,17 @@ end
 
 class SystemdServiceManager < ServiceManager
   def do_restart(service)
-    unless exec_cmd("systemctl restart #{service}")
+    unless exec_cmd(get_cmd('restart',service))
       Log.error "Failed to restart '#{service}'"
     end
   end
   def do_start(service)
-    unless exec_cmd("systemctl start #{service}")
+    unless exec_cmd(get_cmd('start',service))
       Log.error "Failed to start '#{service}'"
     end
   end
   def check_service(service)
-    exec_cmd("systemctl is-active #{service}", true)
+    service == 'systemd-daemon' || exec_cmd("systemctl is-active #{service}", true)
   end
   def get_service_paths
     ['/lib/systemd/system/', '/usr/lib/systemd/system/','/etc/rc.d/init.d/','/etc/init.d/']
@@ -182,6 +182,13 @@ class SystemdServiceManager < ServiceManager
     name.split('@').first
   end
   private
+  def get_cmd(action,service)
+    if service == 'systemd-daemon'
+      cmd = "systemctl daemon-reexec"
+    else
+      cmd = "systemctl #{action} #{service}"
+    end
+  end
   def find_services
     `systemctl list-units | grep ' running ' | awk '{print $1}'`.split("\n").collect do |s|
       s =~ /(.*).service$/
@@ -222,9 +229,17 @@ class Cnf
     @cnf = YAML::load_file(CONFIG_FILE) rescue {}
     @cnf['bin_to_service'] ||= {}
     default_bin_to_service = {
+      'CentOS.7' => {
+        '/usr/sbin/rpcbind'   => 'rpcbind',
+        '/usr/sbin/rpc.statd' => 'rpc-statd',
+      },
       'CentOS.6' => {
         '/sbin/mingetty' => 'getty-reboot',
         '/sbin/agetty' => 'getty-reboot',
+      },
+      'default' => {
+        '/usr/libexec/qemu-kvm'             => 'vm-reboot',
+        '/usr/lib/systemd/systemd-machined' => 'systemd-reboot',
       },
     }
     default_bin_to_service.keys.each{|k| @cnf['bin_to_service'][k] = default_bin_to_service[k].merge(@cnf['bin_to_service'][k]||{}) }
@@ -233,6 +248,7 @@ class Cnf
       'CentOS.7' => ['auditd'],
       'CentOS.6' => ['udev-post','getty-reboot'],
       'Debian.7' => ['dbus','screen-cleanup'],
+      'default'  => ['systemd-reboot','vm-reboot'],
     }
     default_must_reboot.keys.each{|k| @cnf['must_reboot'][k] = (@cnf['must_reboot'][k]||[])|default_must_reboot[k] }
     @cnf['blacklisted'] = (@cnf['blacklisted']||[])|["halt", "reboot", "libvirt-guests", "cryptdisks",
@@ -323,10 +339,10 @@ class ServiceGuesser
       "Probably affected"    => as_todo,
       "Ignoring blacklisted" => bs_as,
       "Ignoring non-running" => skip_as,
-    }.each do |s,l|
-      unless l.empty?
-        Log.info "#{s} services:"
-        l.each{|s| Log.info "* #{s}" }
+    }.each do |msg,svs|
+      unless svs.empty?
+        Log.info "#{msg} services:"
+        svs.each{|s| Log.info "* #{s}" }
       end
     end
     # services we want todo & services that require
