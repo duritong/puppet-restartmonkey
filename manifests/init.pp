@@ -50,7 +50,7 @@ class restartmonkey(
 
     # run it one a month in verbose to inform about remaining problems
     File['/etc/cron.monthly/restartmonkey_info']{
-      content => '/usr/local/sbin/restart-monkey --cron --dry-run --verbose',
+      content => "#!/bin/bash\n/usr/local/sbin/restart-monkey --cron --dry-run --verbose",
       owner   => 'root',
       group   => 0,
       mode    => '0744',
