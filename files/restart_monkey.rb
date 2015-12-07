@@ -244,6 +244,8 @@ class Cnf
       },
     }
     default_bin_to_service.keys.each{|k| @cnf['bin_to_service'][k] = default_bin_to_service[k].merge(@cnf['bin_to_service'][k]||{}) }
+
+    @cnf['restart_cmd'] ||= {}
     default_restart_cmd = {
       'CentOS.7' => {
         # https://bugzilla.redhat.com/show_bug.cgi?id=973697
