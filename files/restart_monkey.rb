@@ -153,7 +153,8 @@ end
 
 class SystemdServiceManager < ServiceManager
   def do_restart(service)
-    unless exec_cmd(get_cmd('restart',service))
+    cmd = CONFIG.restart_cmd(service) || get_cmd('restart',service)
+    unless exec_cmd(cmd)
       Log.error "Failed to restart '#{service}'"
     end
   end
@@ -243,9 +244,19 @@ class Cnf
       },
     }
     default_bin_to_service.keys.each{|k| @cnf['bin_to_service'][k] = default_bin_to_service[k].merge(@cnf['bin_to_service'][k]||{}) }
+    default_restart_cmd = {
+      'CentOS.7' => {
+        # https://bugzilla.redhat.com/show_bug.cgi?id=973697
+        'auditd' => '/sbin/service auditd restart',
+      },
+      'CentOS.6' => {},
+      'default'  => {},
+    }
+    default_restart_cmd.keys.each{|k| @cnf['restart_cmd'][k] = default_restart_cmd[k].merge(@cnf['restart_cmd'][k]||{}) }
+
     @cnf['must_reboot'] ||= {}
     default_must_reboot = {
-      'CentOS.7' => ['auditd'],
+      'CentOS.7' => [],
       'CentOS.6' => ['udev-post','getty-reboot'],
       'Debian.7' => ['dbus','screen-cleanup'],
       'default'  => ['systemd-reboot','vm-reboot'],
@@ -285,6 +296,12 @@ class Cnf
       Facter.value('operatingsystem'),
       'default'
     ].any?{|l| (@cnf['must_reboot'][l]||[]).include?(service) }
+  end
+  def restart_cmd(service)
+    ["#{Facter.value('operatingsystem')}.#{Facter.value('operatingsystemmajrelease')}",
+      Facter.value('operatingsystem'),
+      'default'
+    ].find{|l| (@cnf['restart_cmd'][l]||{})[service] }
   end
 end
 
