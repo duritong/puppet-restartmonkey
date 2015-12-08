@@ -300,10 +300,11 @@ class Cnf
     ].any?{|l| (@cnf['must_reboot'][l]||[]).include?(service) }
   end
   def restart_cmd(service)
-    ["#{Facter.value('operatingsystem')}.#{Facter.value('operatingsystemmajrelease')}",
+    level = ["#{Facter.value('operatingsystem')}.#{Facter.value('operatingsystemmajrelease')}",
       Facter.value('operatingsystem'),
       'default'
     ].find{|l| (@cnf['restart_cmd'][l]||{})[service] }
+    level.nil? ? nil : @cnf['restart_cmd'][level][service]
   end
 end
 
