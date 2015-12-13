@@ -238,6 +238,11 @@ class Cnf
         '/sbin/mingetty' => 'getty-reboot',
         '/sbin/agetty' => 'getty-reboot',
       },
+      'CentOS.5' => {
+        '/usr/sbin/xenconsoled' => 'xend-reboot',
+        '/usr/sbin/xenstored'   => 'xend-reboot',
+        '/usr/sbin/blktapctrl'  => 'xend-reboot',
+      },
       'default' => {
         '/usr/libexec/qemu-kvm'             => 'vm-reboot',
         '/usr/lib/systemd/systemd-machined' => 'systemd-reboot',
@@ -260,6 +265,7 @@ class Cnf
     default_must_reboot = {
       'CentOS.7' => [],
       'CentOS.6' => ['udev-post','getty-reboot'],
+      'CentOS.5' => ['xend-reboot'],
       'Debian.7' => ['dbus','screen-cleanup'],
       'default'  => ['systemd-reboot','vm-reboot'],
     }
