@@ -383,7 +383,7 @@ class ServiceGuesser
       return nil
     end
     possible_services = list_files_of_package(package).split("\n").collect{|l|
-      File.basename(l,SRV_MANAGER.service_suffix) if SRV_MANAGER.get_service_paths.any?{|p| l.start_with?(p) }
+      File.basename(l,SRV_MANAGER.service_suffix) if SRV_MANAGER.get_service_paths.any?{|p| l.start_with?(p) && l.end_with?(SRV_MANAGER.service_suffix) }
     }.compact
     Log.debug("Possible services for #{exe}: #{possible_services.join(', ')}")
     active_services = SRV_MANAGER.must_reboot_services(possible_services)|SRV_MANAGER.filter_non_running_and_blocked_services(possible_services)
