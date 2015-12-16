@@ -246,6 +246,7 @@ class Cnf
       'default' => {
         '/usr/libexec/qemu-kvm'             => 'vm-reboot',
         '/usr/lib/systemd/systemd-machined' => 'systemd-reboot',
+        '/usr/lib/systemd/systemd'          => 'systemd-daemon-reexec'
       },
     }
     default_bin_to_service.keys.each{|k| @cnf['bin_to_service'][k] = default_bin_to_service[k].merge(@cnf['bin_to_service'][k]||{}) }
@@ -257,7 +258,9 @@ class Cnf
         'auditd' => '/sbin/service auditd restart',
       },
       'CentOS.6' => {},
-      'default'  => {},
+      'default'  => {
+        'systemd-daemon-reexec' => '/sbin/systemctl daemon-reexec',
+      },
     }
     default_restart_cmd.keys.each{|k| @cnf['restart_cmd'][k] = default_restart_cmd[k].merge(@cnf['restart_cmd'][k]||{}) }
 
