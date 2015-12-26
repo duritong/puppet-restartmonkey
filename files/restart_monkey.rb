@@ -567,7 +567,7 @@ def is_interpreter?(exe)
 end
 
 def interpreter_regexp
-  'bin\/(bash|perl|ruby|python)([\d\.]*|\.#prelink#)'
+  'bin\/(bash|perl|ruby|python|php)([\d\.]*|\.#prelink#)'
 end
 
 def affected_exes(affected_pids)
