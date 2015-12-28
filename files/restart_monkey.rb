@@ -98,13 +98,13 @@ class ServiceManager
   def services
     @services ||= find_services.sort
   end
-  def do_restart(service)
+  def restart_cmd(service)
     raise 'implement for the specific init system'
   end
   def do_start(service)
     raise 'implement for the specific init system'
   end
-  def check_service(service)
+  def status_cmd(service)
     raise 'implement for the specific init system'
   end
   def get_service_paths
@@ -114,6 +114,16 @@ class ServiceManager
     ''
   end
 
+  def restart(service)
+    cmd = CONFIG.restart_cmd(service) || restart_cmd(service)
+    unless exec_cmd(cmd)
+      Log.error "Failed to restart '#{service}'"
+    end
+  end
+  def check_service(service)
+    cmd = CONFIG.status_cmd(service) || status_cmd(service)
+    exec_cmd(cmd,true)
+  end
   def filter_non_running_and_blocked_services(svs)
     svs.reject{|s| non_running_or_blocked_service?(s) }
   end
@@ -126,10 +136,10 @@ class ServiceManager
   end
 
   def blacklisted_service?(service)
-    CONFIG.blacklisted?(sanitize_name(service))||CONFIG.blacklisted?(service)
+    CONFIG.blacklisted?(sanitize_name(service)) || CONFIG.blacklisted?(service)
   end
   def must_reboot_service?(service)
-    CONFIG.must_reboot?(sanitize_name(service))||CONFIG.must_reboot?(service)
+    CONFIG.must_reboot?(sanitize_name(service)) || CONFIG.must_reboot?(service)
   end
 
 
@@ -152,19 +162,16 @@ class ServiceManager
 end
 
 class SystemdServiceManager < ServiceManager
-  def do_restart(service)
-    cmd = CONFIG.restart_cmd(service) || get_cmd('restart',service)
-    unless exec_cmd(cmd)
-      Log.error "Failed to restart '#{service}'"
-    end
+  def restart_cmd(service)
+    get_cmd('restart',service)
   end
   def do_start(service)
     unless exec_cmd(get_cmd('start',service))
       Log.error "Failed to start '#{service}'"
     end
   end
-  def check_service(service)
-    service == 'systemd-daemon' || exec_cmd("systemctl is-active #{service}", true)
+  def status_cmd(service)
+    get_cmd("is-active #{service}")
   end
   def get_service_paths
     ['/lib/systemd/system/', '/usr/lib/systemd/system/','/etc/rc.d/init.d/','/etc/init.d/']
@@ -184,11 +191,7 @@ class SystemdServiceManager < ServiceManager
   end
   private
   def get_cmd(action,service)
-    if service == 'systemd-daemon'
-      cmd = "systemctl daemon-reexec"
-    else
-      cmd = "systemctl #{action} #{service}"
-    end
+    "systemctl #{action} #{service}"
   end
   def find_services
     `systemctl list-units | grep ' running ' | awk '{print $1}'`.split("\n").collect do |s|
@@ -199,18 +202,16 @@ class SystemdServiceManager < ServiceManager
 end
 
 class InitVServiceManager < ServiceManager
-  def do_restart(service)
-    unless exec_cmd("/etc/init.d/#{service} restart")
-      Log.error "Failed to restart '#{service}'"
-    end
+  def restart_cmd(service)
+    "/etc/init.d/#{service} restart"
   end
   def do_start(service)
     unless exec_cmd("/etc/init.d/#{service} start")
       Log.error "Failed to start '#{service}'"
     end
   end
-  def check_service(service)
-    exec_cmd("/etc/init.d/#{service} status",true)
+  def status_cmd(service)
+    "/etc/init.d/#{service} status"
   end
 
   def get_service_paths
@@ -251,6 +252,15 @@ class Cnf
     }
     default_bin_to_service.keys.each{|k| @cnf['bin_to_service'][k] = default_bin_to_service[k].merge(@cnf['bin_to_service'][k]||{}) }
 
+    @cnf['status_cmd'] ||= {}
+    default_status_cmd = {
+      'default'  => {
+        # dummy service
+        'systemd-daemon-reexec' => '/usr/bin/true'
+      },
+    }
+    default_status_cmd.keys.each{|k| @cnf['status_cmd'][k] = default_status_cmd[k].merge(@cnf['status_cmd'][k]||{}) }
+
     @cnf['restart_cmd'] ||= {}
     default_restart_cmd = {
       'CentOS.7' => {
@@ -287,15 +297,12 @@ class Cnf
     (@cnf["ignore"] || []).include? service
   end
   def blacklisted?(service)
-    t = (@cnf["blacklisted"] || []).include? service
+    t = (@cnf["blacklisted"] || []).include?( service)
     Log.debug("Service #{service} is blacklisted") if t
     t
   end
   def bin_to_service(binary)
-    ["#{Facter.value('operatingsystem')}.#{Facter.value('operatingsystemmajrelease')}",
-      Facter.value('operatingsystem'),
-      'default'
-    ].each do |f|
+    os_levels.each do |f|
       if svc = (@cnf['bin_to_service'][f]||{})[binary]
         return svc
       end
@@ -303,17 +310,19 @@ class Cnf
     nil
   end
   def must_reboot?(service)
-    ["#{Facter.value('operatingsystem')}.#{Facter.value('operatingsystemmajrelease')}",
-      Facter.value('operatingsystem'),
-      'default'
-    ].any?{|l| (@cnf['must_reboot'][l]||[]).include?(service) }
+    os_levels.any?{|l| (@cnf['must_reboot'][l]||[]).include?(service) }
   end
   def restart_cmd(service)
-    level = ["#{Facter.value('operatingsystem')}.#{Facter.value('operatingsystemmajrelease')}",
-      Facter.value('operatingsystem'),
-      'default'
-    ].find{|l| (@cnf['restart_cmd'][l]||{})[service] }
+    level = os_levels.find{|l| (@cnf['restart_cmd'][l]||{})[service] }
     level.nil? ? nil : @cnf['restart_cmd'][level][service]
+  end
+  private
+  def os_levels
+    @os_levels ||= [
+      "#{Facter.value('operatingsystem')}.#{Facter.value('operatingsystemmajrelease')}",
+      Facter.value('operatingsystem'),
+      'default',
+    ]
   end
 end
 
@@ -444,7 +453,7 @@ class Jobs
       if OPTION[:dry_run]
         Log.puts "Would restart service '#{name}'"
       else
-        SRV_MANAGER.do_restart(name)
+        SRV_MANAGER.restart(name)
         sleep(1)
         unless SRV_MANAGER.check_service(name)
           SRV_MANAGER.do_start(name)
