@@ -316,6 +316,10 @@ class Cnf
     level = os_levels.find{|l| (@cnf['restart_cmd'][l]||{})[service] }
     level.nil? ? nil : @cnf['restart_cmd'][level][service]
   end
+  def status_cmd(service)
+    level = os_levels.find{|l| (@cnf['status_cmd'][l]||{})[service] }
+    level.nil? ? nil : @cnf['status_cmd'][level][service]
+  end
   private
   def os_levels
     @os_levels ||= [
