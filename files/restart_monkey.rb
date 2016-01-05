@@ -269,7 +269,7 @@ class Cnf
       },
       'CentOS.6' => {},
       'default'  => {
-        'systemd-daemon-reexec' => '/sbin/systemctl daemon-reexec',
+        'systemd-daemon-reexec' => '/usr/bin/systemctl daemon-reexec',
       },
     }
     default_restart_cmd.keys.each{|k| @cnf['restart_cmd'][k] = default_restart_cmd[k].merge(@cnf['restart_cmd'][k]||{}) }
