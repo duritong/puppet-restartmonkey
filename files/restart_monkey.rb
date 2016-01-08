@@ -171,7 +171,7 @@ class SystemdServiceManager < ServiceManager
     end
   end
   def status_cmd(service)
-    get_cmd("is-active #{service}")
+    get_cmd('is-active',service)
   end
   def get_service_paths
     ['/lib/systemd/system/', '/usr/lib/systemd/system/','/etc/rc.d/init.d/','/etc/init.d/']
