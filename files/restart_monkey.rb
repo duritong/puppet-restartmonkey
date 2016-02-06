@@ -269,7 +269,7 @@ class Cnf
       },
       'CentOS.6' => {},
       'default'  => {
-        'systemd-daemon-reexec' => '/usr/bin/systemctl daemon-reexec',
+        'systemd-daemon-reexec' => 'systemctl daemon-reexec',
       },
     }
     default_restart_cmd.keys.each{|k| @cnf['restart_cmd'][k] = default_restart_cmd[k].merge(@cnf['restart_cmd'][k]||{}) }
@@ -670,7 +670,7 @@ end
 CONFIG = Cnf.new
 JOBS = Jobs.new
 REBOOT_MANAGER = RebootManager.new
-SRV_MANAGER = if File.exists?('/usr/bin/systemctl')
+SRV_MANAGER = if File.exists?('/usr/bin/systemctl') || File.exists?('/bin/systemctl')
   SystemdServiceManager.new
 else
   InitVServiceManager.new
