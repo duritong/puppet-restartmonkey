@@ -269,6 +269,8 @@ class Cnf
       },
       'CentOS.6' => {},
       'default'  => {
+        # see man virtlockd
+        'virtlockd'             => 'systemctl reload virtlockd',
         'systemd-daemon-reexec' => 'systemctl daemon-reexec',
       },
     }
