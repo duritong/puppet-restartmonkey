@@ -292,14 +292,15 @@ class Cnf
   end
 
   def whitelisted?(service)
-    (@cnf["whitelist"] || []).include? service
+    whitelist.include?(service) || (service.include?('@') && whitelist.any?{|w| service =~ /^#{w}/ })
   end
 
   def ignored?(service)
-    (@cnf["ignore"] || []).include? service
+    ignore.include?(service)
   end
+
   def blacklisted?(service)
-    t = (@cnf["blacklisted"] || []).include?( service)
+    t = blacklist.include?(service)
     Log.debug("Service #{service} is blacklisted") if t
     t
   end
@@ -329,6 +330,15 @@ class Cnf
       Facter.value('operatingsystem'),
       'default',
     ]
+  end
+  def whitelist
+    @whitelist ||= (@cnf["whitelist"] || [])
+  end
+  def ignore
+    @ignore ||= (@cnf["ignore"] || [])
+  end
+  def blacklist
+    @blacklist ||= (@cnf["blacklisted"] || [])
   end
 end
 
