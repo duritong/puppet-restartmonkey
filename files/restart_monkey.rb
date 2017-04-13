@@ -598,7 +598,12 @@ def affected_exes(affected_pids)
     pid = p.to_i
     exe = `readlink /proc/#{pid}/exe`.gsub(" (deleted)", "").chomp
     if is_interpreter?(exe)
-      exe = cmdline(pid).sub(/.*#{interpreter_regexp}[\-\w\s]*\//,'/').gsub(/\s.*$/,'')
+      cmdl = cmdline(pid)
+      exe = (if cmdl.start_with?('/')
+        cmdl.sub(/.*#{interpreter_regexp}[\-\w\s]*\//,'/')
+      else
+        '/' + cmdl.split(' /',2).last
+      end).gsub(/\s.*$/,'')
     end
     [pid, exe]
   end.uniq.sort]
