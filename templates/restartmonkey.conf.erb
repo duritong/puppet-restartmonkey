@@ -1,0 +1,4 @@
+---
+whitelist:<%= @whitelist.empty? ? ' []' : "\n  - #{@whitelist.sort.join("\n  - ")}" %>
+ignore:<%= @ignore.empty? ? ' []' : "\n  - #{@ignore.sort.join("\n  - ")}" %>
+bin_to_service: <%= @bin_to_service.empty? ? '{}' : @bin_to_service.keys.sort.collect{|k| "\n  '#{k}':\n    " + @bin_to_service[k].keys.sort.collect{|b| "'#{b}': '#{@bin_to_service[k][b]}'" }.join("\n    ") }.join
