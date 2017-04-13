@@ -1,11 +1,12 @@
 # manifests/init.pp - module to manage and deploy restart monkey
 class restartmonkey(
-  $active  = true,
-  $dry_run = false,
-  $verbose = false,
-  $policy  = 'normal',
-  $whitelist = [],
-  $ignore    = [],
+  $active         = true,
+  $dry_run        = false,
+  $verbose        = false,
+  $policy         = 'normal',
+  $whitelist      = [],
+  $ignore         = [],
+  $bin_to_service = {},
 ) {
 
   $dry_run_str = $dry_run ? {
