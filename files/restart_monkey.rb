@@ -402,7 +402,7 @@ class ServiceGuesser
     end
     possible_services = list_files_of_package(package).split("\n").collect{|l|
       File.basename(l,SRV_MANAGER.service_suffix) if SRV_MANAGER.get_service_paths.any?{|p| l.start_with?(p) && l.end_with?(SRV_MANAGER.service_suffix) }
-    }.compact
+    }.compact.sort
     exe_name = File.basename(exe)
     active_services = []
     if active_service = possible_services.find{|ps| ps.start_with?(exe_name) }
