@@ -234,10 +234,12 @@ class Cnf
       'CentOS.7' => {
         '/usr/sbin/rpcbind'   => 'rpcbind',
         '/usr/sbin/rpc.statd' => 'rpc-statd',
+        '/usr/sbin/mdadm'     => 'mdmonitor',
       },
       'CentOS.6' => {
         '/sbin/mingetty' => 'getty-reboot',
-        '/sbin/agetty' => 'getty-reboot',
+        '/sbin/agetty'   => 'getty-reboot',
+        '/sbin/mdadm'    => 'mdmonitor',
       },
       'CentOS.5' => {
         '/usr/sbin/xenconsoled' => 'xend-reboot',
