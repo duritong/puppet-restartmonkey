@@ -368,7 +368,7 @@ class Cnf
       res['operatingsystemrelease'] ||= fields['Release:']
     end
     res['operatingsystemmajrelease'] ||= res['operatingsystemrelease'].split('.',2).first
-    unless ['operatingsystem','operatingsystemmajrelease','operatingsystemrelease'].all?{|k| res.key?(f) }
+    unless os_satisfied?(res)
       raise 'Unable to detect your OS'
     end
     res
