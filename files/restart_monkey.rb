@@ -362,7 +362,7 @@ class Cnf
     elsif File.exists?('/etc/debian_version')
       res['operatingsystemrelease'] ||= File.read('/etc/debian_version').chomp
     end
-    if File.exists?('/usr/bin/lsb_release') && !os_satisified?(res)
+    if File.exists?('/usr/bin/lsb_release') && !os_satisfied?(res)
       fields = Hash[%x{/usr/bin/lsb_release -a}.split("\n").collect{|s| s.split("\t") }]
       res['operatingsystem'] ||= fields['Distributor ID:']
       res['operatingsystemrelease'] ||= fields['Release:']
@@ -375,7 +375,7 @@ class Cnf
   end
 
   def os_satisfied?(os)
-    ['operatingsystem','operatingsystemmajrelease','operatingsystemrelease'].all?{|k| os.key?(f) }
+    ['operatingsystem','operatingsystemmajrelease','operatingsystemrelease'].all?{|k| os.key?(k) }
   end
 end
 
