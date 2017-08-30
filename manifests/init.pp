@@ -27,6 +27,7 @@ class restartmonkey(
   }
   $wait_str = " --wait-count ${wait_count}"
 
+  require ::ruby
   file{
     '/usr/local/sbin/restart-monkey':
       source  => 'puppet:///modules/restartmonkey/restart_monkey.rb',
