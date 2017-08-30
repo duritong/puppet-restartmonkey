@@ -31,7 +31,6 @@
 require 'yaml'
 require 'optparse'
 require 'fileutils'
-require 'facter'
 
 OPTION = {}
 OptionParser.new do |opts|
@@ -327,10 +326,47 @@ class Cnf
   private
   def os_levels
     @os_levels ||= [
-      "#{Facter.value('operatingsystem')}.#{Facter.value('operatingsystemmajrelease')}",
-      Facter.value('operatingsystem'),
+      "#{os['operatingsystem']}.#{os['operatingsystemmajrelease']}",
+      os['operatingsystem'],
       'default',
     ]
+  end
+
+  def os
+    @os ||= detect_os
+  end
+
+  # TODO: implement more options
+  def detect_os
+    res = {}
+    if File.exists?('/etc/os-release')
+      fields = Hash[File.read('/etc/os-release').split("\n").reject(&:empty?).collect{|s| s.split('=') }]
+      res['operatingsystem'] = fields['NAME'].split(' ',2).first
+      res['operatingsystemmajrelease'] = fields['VERSION_ID']
+    end
+    if File.exists?('/etc/redhat-release')
+      operatingsystem, long_release = File.read('/etc/redhat-release').chomp.split(' release ')
+      res['operatingsystem'] ||= operatingsystem
+      res['operatingsystemrelease'] ||= long_release
+      res['operatingsystemmajrelease'] ||= res['operatingsystemrelease'].split('.',2).first
+    elsif File.exists?('/etc/debian_version')
+      res['operatingsystemrelease'] ||= File.read('/etc/debian_version').chomp
+      res['operatingsystemmajrelease'] ||= res['operatingsystemrelease'].split('.',2).first
+    end
+    if File.exists?('/usr/bin/lsb_release') && !os_satisified?(res)
+      fields = Hash[%x{/usr/bin/lsb_release -a}.split("\n").collect{|s| s.split("\t") }]
+      res['operatingsystem'] ||= fields['Distributor ID:']
+      res['operatingsystemrelease'] ||= fields['Release:']
+      res['operatingsystemmajrelease'] ||= res['operatingsystemrelease'].split('.',2).first
+    end
+    unless ['operatingsystem','operatingsystemmajrelease','operatingsystemrelease'].all?{|k| res.key?(f) }
+      raise 'Unable to detect your OS'
+    end
+    res
+  end
+
+  def os_satisfied?(os)
+    ['operatingsystem','operatingsystemmajrelease','operatingsystemrelease'].all?{|k| os.key?(f) }
   end
 end
 
