@@ -346,6 +346,9 @@ class Cnf
     end
     if File.exists?('/etc/redhat-release')
       operatingsystem, long_release = File.read('/etc/redhat-release').chomp.split(' release ')
+      if operatingsystem =~ /^Red Hat Enterprise/
+        operatingsystem = 'RedHat'
+      end
       res['operatingsystem'] ||= operatingsystem
       res['operatingsystemrelease'] ||= long_release
       res['operatingsystemmajrelease'] ||= res['operatingsystemrelease'].split('.',2).first
