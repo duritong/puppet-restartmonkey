@@ -341,27 +341,33 @@ class Cnf
     res = {}
     if File.exists?('/etc/os-release')
       fields = Hash[File.read('/etc/os-release').split("\n").reject(&:empty?).collect{|s| s.split('=') }]
-      res['operatingsystem'] = fields['NAME'].split(' ',2).first
-      res['operatingsystemmajrelease'] = fields['VERSION_ID']
+      if fields['NAME'] =~ /^Arch/
+        res['operatingsystem'] = 'Archlinux'
+        res['operatingsystemrelease'] = %x{uname --kernelrelease}.chomp
+      elsif fields['NAME'] =~ /^openSUSE/
+        res['operatingsystem'] = 'OpenSuSE'
+        res['operatingsystemrelease'] = fields['VERSION_ID']
+      else
+        res['operatingsystem'] = fields['NAME'].split(' ',2).first
+        res['operatingsystemmajrelease'] = fields['VERSION_ID']
+      end
     end
     if File.exists?('/etc/redhat-release')
       operatingsystem, long_release = File.read('/etc/redhat-release').chomp.split(' release ')
       if operatingsystem =~ /^Red Hat Enterprise/
         operatingsystem = 'RedHat'
       end
-      res['operatingsystem'] ||= operatingsystem
+      res['operatingsystem'] = operatingsystem
       res['operatingsystemrelease'] ||= long_release
-      res['operatingsystemmajrelease'] ||= res['operatingsystemrelease'].split('.',2).first
     elsif File.exists?('/etc/debian_version')
       res['operatingsystemrelease'] ||= File.read('/etc/debian_version').chomp
-      res['operatingsystemmajrelease'] ||= res['operatingsystemrelease'].split('.',2).first
     end
     if File.exists?('/usr/bin/lsb_release') && !os_satisified?(res)
       fields = Hash[%x{/usr/bin/lsb_release -a}.split("\n").collect{|s| s.split("\t") }]
       res['operatingsystem'] ||= fields['Distributor ID:']
       res['operatingsystemrelease'] ||= fields['Release:']
-      res['operatingsystemmajrelease'] ||= res['operatingsystemrelease'].split('.',2).first
     end
+    res['operatingsystemmajrelease'] ||= res['operatingsystemrelease'].split('.',2).first
     unless ['operatingsystem','operatingsystemmajrelease','operatingsystemrelease'].all?{|k| res.key?(f) }
       raise 'Unable to detect your OS'
     end
@@ -487,6 +493,16 @@ class DPKGServiceGuesser < ServiceGuesser
   end
   def list_files_of_package(package)
     `dpkg -L #{package}`
+  end
+end
+
+class PACMANServiceGuesser < ServiceGuesser
+  protected
+  def get_package(exe)
+    `pacman -Qoq -- #{shellescape(exe)} 2>/dev/null`.chomp
+  end
+  def list_files_of_package(package)
+    `pacman -Qlq -- #{package} 2>/dev/null`
   end
 end
 
@@ -734,8 +750,12 @@ end
 
 if File.exists?('/etc/redhat-release')
   SRV_GUESSER = RPMServiceGuesser.new
+elsif File.exists?('/etc/SuSE-release')
+  SRV_GUESSER = RPMServiceGuesser.new
 elsif File.exists?('/etc/debian_version')
   SRV_GUESSER = DPKGServiceGuesser.new
+elsif File.exists?('/etc/arch-release')
+  SRV_GUESSER = PACMANServiceGuesser.new
 else
   raise 'Can\'t detect the right service guesser'
 end
