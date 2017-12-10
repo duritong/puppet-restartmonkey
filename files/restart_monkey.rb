@@ -231,6 +231,12 @@ class Cnf
     @cnf['bin_to_service'] ||= {}
     default_bin_to_service = {
       'CentOS.7' => {
+        # this service shall not be restarted
+        # directly
+        '/usr/sbin/auditd'    => 'auditd-reboot',
+        # a simple service restart is killing
+        # to many dependecnies
+        '/bin/dbus-daemon'    => 'dbus-reboot',
         '/usr/sbin/rpcbind'   => 'rpcbind',
         '/usr/sbin/rpc.statd' => 'rpc-statd',
         '/usr/sbin/mdadm'     => 'mdmonitor',
@@ -264,10 +270,7 @@ class Cnf
 
     @cnf['restart_cmd'] ||= {}
     default_restart_cmd = {
-      'CentOS.7' => {
-        # https://bugzilla.redhat.com/show_bug.cgi?id=973697
-        'auditd' => '/sbin/service auditd restart',
-      },
+      'CentOS.7' => {},
       'CentOS.6' => {},
       'default'  => {
         # see man virtlockd
@@ -279,7 +282,7 @@ class Cnf
 
     @cnf['must_reboot'] ||= {}
     default_must_reboot = {
-      'CentOS.7' => [],
+      'CentOS.7' => ['auditd-reboot', 'dbus-reboot'],
       'CentOS.6' => ['udev-post','getty-reboot'],
       'CentOS.5' => ['xend-reboot'],
       'Debian.7' => ['dbus','screen-cleanup'],
