@@ -233,6 +233,7 @@ class Cnf
       'CentOS.7' => {
         # this service shall not be restarted
         # directly
+        '/usr/sbin/auditd'    => 'auditd-reboot',
         '/sbin/auditd'        => 'auditd-reboot',
         # a simple service restart is killing
         # to many dependecnies
@@ -343,7 +344,7 @@ class Cnf
   def detect_os
     res = {}
     if File.exists?('/etc/os-release')
-      fields = Hash[File.read('/etc/os-release').split("\n").reject(&:empty?).collect{|s| s.split('=') }]
+      fields = Hash[File.read('/etc/os-release').split("\n").reject(&:empty?).collect{|s| s.split('=').collect{|v| v.gsub(/"/,'') } }]
       if fields['NAME'] =~ /^Arch/
         res['operatingsystem'] = 'Archlinux'
         res['operatingsystemrelease'] = %x{uname --kernelrelease}.chomp
@@ -352,11 +353,11 @@ class Cnf
         res['operatingsystemrelease'] = fields['VERSION_ID']
       else
         res['operatingsystem'] = fields['NAME'].split(' ',2).first
-        res['operatingsystemmajrelease'] = fields['VERSION_ID']
+        res['operatingsystemmajrelease'] = fields['VERSION_ID'].gsub(/^(\d+).*/,'\1')
       end
     end
     if File.exists?('/etc/redhat-release')
-      operatingsystem, long_release = File.read('/etc/redhat-release').chomp.split(' release ')
+      operatingsystem, long_release = File.read('/etc/redhat-release').chomp.split(' release ').collect{|s| s.split(' ',2).first }
       if operatingsystem =~ /^Red Hat Enterprise/
         operatingsystem = 'RedHat'
       end
