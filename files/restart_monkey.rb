@@ -233,7 +233,7 @@ class Cnf
       'CentOS.7' => {
         # this service shall not be restarted
         # directly
-        '/usr/sbin/auditd'    => 'auditd-reboot',
+        '/sbin/auditd'        => 'auditd-reboot',
         # a simple service restart is killing
         # to many dependecnies
         '/bin/dbus-daemon'    => 'dbus-reboot',
