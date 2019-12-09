@@ -626,10 +626,14 @@ def libraries(pids)
   pids.each do |p|
     # make sure its a number
     pid = p.to_i
-    ls = `cat /proc/#{pid}/smaps 2> /dev/null | grep 'lib' | awk '{print $6}'`
-    ls.split("\n").uniq.each do |lib|
-      libs[lib] ||= []
-      libs[lib] << pid
+    unless File.exists?("/proc/#{pid}/root/run/.containerenv")
+      ls = `cat /proc/#{pid}/smaps 2> /dev/null | grep 'lib' | awk '{print $6}'`
+      ls.split("\n").uniq.each do |lib|
+        libs[lib] ||= []
+        libs[lib] << pid
+      end
+    else
+      Log.debug "Ignoring pid #{pid} as it seems to run in a container"
     end
   end
 
