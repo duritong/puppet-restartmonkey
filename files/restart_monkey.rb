@@ -620,13 +620,18 @@ def pids
   @pids ||= Dir['/proc/[0-9]*'].collect{|d| File.basename(d) }
 end
 
+def running_in_container?(pid)
+  File.exists?("/proc/#{pid}/root/run/.containerenv") || \
+    File.exists?("/proc/#{pid}/root/.dockerenv")
+end
+
 def libraries(pids)
   libs = {}
 
   pids.each do |p|
     # make sure its a number
     pid = p.to_i
-    unless File.exists?("/proc/#{pid}/root/run/.containerenv")
+    unless running_in_container?(pid)
       ls = `cat /proc/#{pid}/smaps 2> /dev/null | grep 'lib' | awk '{print $6}'`
       ls.split("\n").uniq.each do |lib|
         libs[lib] ||= []
