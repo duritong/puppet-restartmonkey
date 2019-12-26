@@ -31,6 +31,7 @@
 require 'yaml'
 require 'optparse'
 require 'fileutils'
+require 'set'
 
 OPTION = {}
 OptionParser.new do |opts|
@@ -94,6 +95,10 @@ end
 
 
 class ServiceManager
+
+  def detect_service(pid)
+  end
+
   def services
     @services ||= find_services.sort
   end
@@ -161,6 +166,14 @@ class ServiceManager
 end
 
 class SystemdServiceManager < ServiceManager
+
+  def detect_service(pid)
+    if unit = `grep -E '^1:name=systemd:' /proc/#{pid}/cgroup | sed 's@.*/system.slice/@@'`.chomp.gsub(/\.service$/,'')
+      return unit if services.include?(unit)
+    end
+    false
+  end
+
   def restart_cmd(service)
     get_cmd('restart',service)
   end
@@ -297,7 +310,15 @@ class Cnf
   end
 
   def whitelisted?(service)
-    (@cnf["whitelist"] || []).include? service
+    (@cnf["whitelist"] || []).include?(service) || whitelist_matched?(service)
+  end
+
+  def whitelist_matched?(service)
+    whitelist_to_match.any?{|m| service =~ m }
+  end
+
+  def whitelist_to_match
+    @whitelist_to_match ||= @cnf["whitelist"].map{|w| if m = w.match(/^\/(.+)\/$/) then Regexp.new(m[1]) end }.compact
   end
 
   def ignored?(service)
@@ -702,10 +723,23 @@ def print_affected(exes, libs)
     unless exes.empty?
       Log.puts "Affected Exes:"
       exes.each do |pid, exe|
-        Log.puts "* #{exe} [#{pid}] (#{`cat /proc/#{pid}/cmdline | xargs -0 echo`.chomp})"
+        Log.puts "* #{exe} [#{pid}] (#{cmdline(pid)})"
       end
     end
   end
+end
+
+def detect_services_from_pids(pids)
+  services = Set.new
+  remaining_pids = Set.new
+  pids.each do |p|
+    if srv = SRV_MANAGER.detect_service(p)
+      services << srv
+    else
+      remaining_pids << p
+    end
+  end
+  [ services, remaining_pids ]
 end
 
 def find_affected_exes(verbose = false)
@@ -713,10 +747,10 @@ def find_affected_exes(verbose = false)
   vanished_libs = vanished_libraries(libs)
   updated       = updated_pids(pids)
   affected_pids = (vanished_libs.values.flatten + updated).uniq
-  exes          = affected_exes(affected_pids)
-
+  services, remaining_pids = detect_services_from_pids(affected_pids)
+  exes          = affected_exes(remaining_pids)
   print_affected(exes, vanished_libs) if verbose
-  exes.values
+  [ services, exes.values ]
 end
 
 def restart(names)
@@ -775,10 +809,10 @@ end
 
 ## run
 
-affected = find_affected_exes
+affected_services, exes_to_detect = find_affected_exes
 
-if affected.size > 0
-  to_restart = SRV_GUESSER.guess_affected_services(affected)
+if affected_services.size > 0 || exes_to_detect.size > 0
+  to_restart = affected_services | SRV_GUESSER.guess_affected_services(exes_to_detect)
 
   restart(to_restart)
 
