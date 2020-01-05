@@ -168,7 +168,7 @@ end
 class SystemdServiceManager < ServiceManager
 
   def detect_service(pid)
-    if unit = `grep -E '^1:name=systemd:' /proc/#{pid}/cgroup | sed 's@.*/system.slice/@@'`.chomp.gsub(/\.service$/,'')
+    if File.readable?("/proc/#{pid}/cgroup") && unit = `grep -E '^1:name=systemd:' /proc/#{pid}/cgroup | sed 's@.*/system.slice/@@'`.chomp.gsub(/\.service$/,'')
       return unit if services.include?(unit)
     end
     false
