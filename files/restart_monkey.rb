@@ -248,8 +248,10 @@ class Cnf
         # directly
         '/usr/sbin/auditd'    => 'auditd-reboot',
         '/sbin/auditd'        => 'auditd-reboot',
+        'auditd.service'      => 'auditd-reboot',
         # a simple service restart is killing
         # to many dependecnies
+        'dbus.service'        => 'dbus-reboot',
         '/bin/dbus-daemon'    => 'dbus-reboot',
         '/usr/sbin/rpcbind'   => 'rpcbind',
         '/usr/sbin/rpc.statd' => 'rpc-statd',
