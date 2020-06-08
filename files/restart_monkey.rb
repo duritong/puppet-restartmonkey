@@ -643,7 +643,8 @@ end
 
 def running_in_container?(pid)
   File.exists?("/proc/#{pid}/root/run/.containerenv") || \
-    File.exists?("/proc/#{pid}/root/.dockerenv")
+    File.exists?("/proc/#{pid}/root/.dockerenv") || \
+    exec_cmd("grep -qE '^fuse-overlayfs / ' /proc/#{pid}/mounts", true)
 end
 
 def libraries(pids)
