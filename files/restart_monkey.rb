@@ -641,9 +641,11 @@ def pids
   @pids ||= Dir['/proc/[0-9]*'].collect{|d| File.basename(d) }
 end
 
+# https://github.com/containers/libpod/issues/3586
 def running_in_container?(pid)
   File.exists?("/proc/#{pid}/root/run/.containerenv") || \
     File.exists?("/proc/#{pid}/root/.dockerenv") || \
+    exec_cmd("grep -qE 'container=(podman|oci)' /proc/#{pid}/environ", true) || \
     exec_cmd("grep -qE '^fuse-overlayfs / ' /proc/#{pid}/mounts", true)
 end
 
