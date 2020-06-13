@@ -646,7 +646,7 @@ def running_in_container?(pid)
   File.exists?("/proc/#{pid}/root/run/.containerenv") || \
     File.exists?("/proc/#{pid}/root/.dockerenv") || \
     exec_cmd("test -f /proc/#{pid}/environ && grep -qE 'container=(podman|oci)' /proc/#{pid}/environ", true) || \
-    exec_cmd("test -f /proc/#{pid}/mounts && grep -qE '^fuse-overlayfs / ' /proc/#{pid}/mounts", true)
+    exec_cmd("test -s /proc/#{pid}/mounts && grep -qE '^fuse-overlayfs / ' /proc/#{pid}/mounts", true)
 end
 
 def libraries(pids)
