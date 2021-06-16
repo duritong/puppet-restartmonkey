@@ -296,6 +296,7 @@ class Cnf
 
     @cnf['must_reboot'] ||= {}
     default_must_reboot = {
+      'CentOS.8' => ['auditd', 'dbus'],
       'CentOS.7' => ['auditd', 'dbus'],
       'CentOS.6' => ['udev-post','getty-reboot'],
       'CentOS.5' => ['xend-reboot'],
