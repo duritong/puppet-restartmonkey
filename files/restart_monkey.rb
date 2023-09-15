@@ -193,13 +193,16 @@ class SystemdServiceManager < ServiceManager
   end
   def expand_service(service)
     if service =~ /@$/
-      self.services.select{|s| !CONFIG.blacklist?(service) && s.start_with?(service) && check_service(s) }
+      self.services.select{|s| !CONFIG.blacklisted?(service) && s.start_with?(service) && check_service(s) }
     else
       super(service)
     end
   end
   def sanitize_name(name)
     name.split('@').first
+  end
+  def filter_non_running_and_blocked_services(svs)
+    svs.reject{|s| !s.end_with?('@') && non_running_or_blocked_service?(s) }
   end
   private
   def get_cmd(action,service)
