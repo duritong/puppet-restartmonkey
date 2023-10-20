@@ -369,7 +369,7 @@ class Cnf
   # TODO: implement more options
   def detect_os
     res = {}
-    if File.exists?('/etc/os-release')
+    if File.exist?('/etc/os-release')
       fields = Hash[File.read('/etc/os-release').split("\n").reject(&:empty?).collect{|s| s.split('=').collect{|v| v.gsub(/"/,'') } }]
       if fields['NAME'] =~ /^Arch/
         res['operatingsystem'] = 'Archlinux'
@@ -382,17 +382,17 @@ class Cnf
         res['operatingsystemmajrelease'] = fields['VERSION_ID'].gsub(/^(\d+).*/,'\1')
       end
     end
-    if File.exists?('/etc/redhat-release')
+    if File.exist?('/etc/redhat-release')
       operatingsystem, long_release = File.read('/etc/redhat-release').chomp.split(' release ').collect{|s| s.split(' ',2).first }
       if operatingsystem =~ /^Red Hat Enterprise/
         operatingsystem = 'RedHat'
       end
       res['operatingsystem'] = operatingsystem
       res['operatingsystemrelease'] ||= long_release
-    elsif File.exists?('/etc/debian_version')
+    elsif File.exist?('/etc/debian_version')
       res['operatingsystemrelease'] ||= File.read('/etc/debian_version').chomp
     end
-    if File.exists?('/usr/bin/lsb_release') && !os_satisfied?(res)
+    if File.exist?('/usr/bin/lsb_release') && !os_satisfied?(res)
       fields = Hash[%x{/usr/bin/lsb_release -a}.split("\n").collect{|s| s.split("\t") }]
       res['operatingsystem'] ||= fields['Distributor ID:']
       res['operatingsystemrelease'] ||= fields['Release:']
@@ -648,8 +648,8 @@ end
 
 # https://github.com/containers/libpod/issues/3586
 def running_in_container?(pid)
-  File.exists?("/proc/#{pid}/root/run/.containerenv") || \
-    File.exists?("/proc/#{pid}/root/.dockerenv") || \
+  File.exist?("/proc/#{pid}/root/run/.containerenv") || \
+    File.exist?("/proc/#{pid}/root/.dockerenv") || \
     exec_cmd("test -f /proc/#{pid}/environ && grep -qE 'container=(podman|oci)' /proc/#{pid}/environ", true) || \
     exec_cmd("test -e /proc/#{pid}/mounts && grep -qsE '^fuse-overlayfs / ' /proc/#{pid}/mounts", true)
 end
@@ -797,19 +797,19 @@ end
 CONFIG = Cnf.new
 JOBS = Jobs.new
 REBOOT_MANAGER = RebootManager.new
-SRV_MANAGER = if File.exists?('/usr/bin/systemctl') || File.exists?('/bin/systemctl')
+SRV_MANAGER = if File.exist?('/usr/bin/systemctl') || File.exist?('/bin/systemctl')
   SystemdServiceManager.new
 else
   InitVServiceManager.new
 end
 
-if File.exists?('/etc/redhat-release')
+if File.exist?('/etc/redhat-release')
   SRV_GUESSER = RPMServiceGuesser.new
-elsif File.exists?('/etc/SuSE-release')
+elsif File.exist?('/etc/SuSE-release')
   SRV_GUESSER = RPMServiceGuesser.new
-elsif File.exists?('/etc/debian_version')
+elsif File.exist?('/etc/debian_version')
   SRV_GUESSER = DPKGServiceGuesser.new
-elsif File.exists?('/etc/arch-release')
+elsif File.exist?('/etc/arch-release')
   SRV_GUESSER = PACMANServiceGuesser.new
 else
   raise 'Can\'t detect the right service guesser'
